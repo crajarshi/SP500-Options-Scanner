@@ -1,6 +1,10 @@
-# S&P 500 Intraday Options Scanner
+# S&P 500 Intraday Options Scanner 📈
 
 An advanced Python application that analyzes S&P 500 stocks using intraday technical indicators to identify the top options trading opportunities. The scanner uses 15-minute bars to provide real-time, actionable signals throughout the trading day.
+
+![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Finnhub](https://img.shields.io/badge/API-Finnhub-orange.svg)
 
 ## Features
 

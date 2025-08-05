@@ -190,7 +190,7 @@ class OptionsScannnerDashboard:
         )
         return Panel(
             Align.center(footer_text),
-            box=box.SINGLE,
+            box=box.ROUNDED,
             border_style="dim white"
         )
     

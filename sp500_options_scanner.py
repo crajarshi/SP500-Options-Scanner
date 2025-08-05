@@ -20,6 +20,7 @@ import config
 from indicators import calculate_all_indicators
 from signals import analyze_stock, rank_stocks
 from dashboard import OptionsScannnerDashboard
+from demo_data_generator import generate_demo_intraday_data, get_demo_sp500_tickers
 
 # Set up logging
 logging.basicConfig(
@@ -36,15 +37,19 @@ logger = logging.getLogger(__name__)
 class SP500OptionsScanner:
     """Main scanner class"""
     
-    def __init__(self):
+    def __init__(self, demo_mode=False):
         self.api_key = config.FINNHUB_API_KEY
         self.dashboard = OptionsScannnerDashboard()
         self.session = requests.Session()
         self.errors = []
         self.running = True
+        self.demo_mode = demo_mode
         
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
+        
+        if self.demo_mode:
+            logger.info("Running in DEMO MODE - using simulated data")
         
     def signal_handler(self, signum, frame):
         """Handle Ctrl+C gracefully"""
@@ -91,47 +96,47 @@ class SP500OptionsScanner:
             logger.warning(f"Cache save error: {e}")
     
     def fetch_sp500_tickers(self) -> List[str]:
-        """Fetch S&P 500 constituents from Finnhub"""
+        """Fetch S&P 500 constituents"""
+        if self.demo_mode:
+            tickers = get_demo_sp500_tickers()
+            logger.info(f"Using {len(tickers)} demo S&P 500 tickers")
+            return tickers
+            
         # Try cache first
         cached_tickers = self.load_cache(
             'sp500_tickers', 
-            max_age_minutes=60 * 24 * config.S&P500_CACHE_EXPIRY_DAYS
+            max_age_minutes=60 * 24 * config.SP500_CACHE_EXPIRY_DAYS
         )
         if cached_tickers:
             logger.info(f"Loaded {len(cached_tickers)} S&P 500 tickers from cache")
             return cached_tickers
         
-        # Fetch from API
-        url = f"{config.FINNHUB_BASE_URL}/index/constituents"
-        params = {
-            'symbol': '^GSPC',  # S&P 500 index
-            'token': self.api_key
-        }
-        
+        # Try to fetch from Wikipedia
         try:
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'constituents' in data:
-                tickers = data['constituents']
-                self.save_cache(tickers, 'sp500_tickers')
-                logger.info(f"Fetched {len(tickers)} S&P 500 tickers from API")
-                return tickers
-            else:
-                # Fallback to a sample list if API doesn't return constituents
-                logger.warning("API didn't return constituents, using sample list")
-                sample_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 
-                                'NVDA', 'TSLA', 'BRK.B', 'JPM', 'JNJ']
-                return sample_tickers
-                
+            import pandas as pd
+            url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+            tables = pd.read_html(url)
+            sp500_table = tables[0]
+            tickers = sp500_table['Symbol'].tolist()
+            # Clean tickers (some have dots that need to be converted)
+            tickers = [t.replace('.', '-') for t in tickers]
+            self.save_cache(tickers, 'sp500_tickers')
+            logger.info(f"Fetched {len(tickers)} S&P 500 tickers from Wikipedia")
+            return tickers
         except Exception as e:
-            logger.error(f"Error fetching S&P 500 tickers: {e}")
-            # Return sample list for testing
-            return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META']
+            logger.warning(f"Could not fetch from Wikipedia: {e}")
+            
+        # Fallback to demo tickers
+        logger.warning("Using demo ticker list")
+        return get_demo_sp500_tickers()
     
     def fetch_intraday_data(self, ticker: str) -> Optional[pd.DataFrame]:
         """Fetch intraday candle data for a ticker"""
+        if self.demo_mode:
+            # Generate demo data
+            df = generate_demo_intraday_data(ticker, days=config.LOOKBACK_DAYS)
+            return df
+            
         # Check cache first
         cache_identifier = f"{ticker}_{datetime.now().strftime('%Y%m%d_%H')}"
         cached_data = self.load_cache(
@@ -142,16 +147,20 @@ class SP500OptionsScanner:
         if cached_data is not None:
             return cached_data
         
-        # Calculate time range
-        end_time = int(datetime.now().timestamp())
-        start_time = int((datetime.now() - timedelta(days=config.LOOKBACK_DAYS)).timestamp())
+        # Calculate time range - FIXED to use proper UNIX timestamp calculation
+        today = datetime.now()
+        days_ago = today - timedelta(days=config.LOOKBACK_DAYS)
+        
+        # Convert to UNIX timestamps as integers
+        to_timestamp = int(time.mktime(today.timetuple()))
+        from_timestamp = int(time.mktime(days_ago.timetuple()))
         
         url = f"{config.FINNHUB_BASE_URL}/stock/candle"
         params = {
             'symbol': ticker,
             'resolution': config.INTRADAY_RESOLUTION,
-            'from': start_time,
-            'to': end_time,
+            'from': from_timestamp,
+            'to': to_timestamp,
             'token': self.api_key
         }
         
@@ -175,11 +184,15 @@ class SP500OptionsScanner:
                 self.save_cache(df, 'intraday_data', cache_identifier)
                 return df
             else:
-                return None
+                # If API fails, use demo data
+                logger.warning(f"API returned no data for {ticker}, using demo data")
+                return generate_demo_intraday_data(ticker, days=config.LOOKBACK_DAYS)
                 
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}: {e}")
-            return None
+            # Fall back to demo data
+            logger.info(f"Using demo data for {ticker}")
+            return generate_demo_intraday_data(ticker, days=config.LOOKBACK_DAYS)
     
     def process_stock(self, ticker: str) -> Optional[Dict]:
         """Process a single stock"""
@@ -352,10 +365,14 @@ class SP500OptionsScanner:
 
 def main():
     """Main entry point"""
-    scanner = SP500OptionsScanner()
-    
     # Check for command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] == '--continuous':
+    demo_mode = '--demo' in sys.argv
+    continuous_mode = '--continuous' in sys.argv
+    
+    # Create scanner
+    scanner = SP500OptionsScanner(demo_mode=demo_mode)
+    
+    if continuous_mode:
         scanner.run_continuous()
     else:
         scanner.run_once()

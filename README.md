@@ -51,8 +51,14 @@ Edit `config.py` to customize:
 
 ## Usage
 
-### Single Scan
-Run a one-time scan of all S&P 500 stocks:
+### Demo Mode (Recommended for Testing)
+Due to Finnhub API limitations on the free tier, use demo mode to test the scanner:
+```bash
+python sp500_options_scanner.py --demo
+```
+
+### Production Mode
+If you have a paid Finnhub API key with access to historical candles:
 ```bash
 python sp500_options_scanner.py
 ```
@@ -61,7 +67,19 @@ python sp500_options_scanner.py
 Run with automatic refresh every 30 minutes:
 ```bash
 python sp500_options_scanner.py --continuous
+python sp500_options_scanner.py --demo --continuous  # Demo + continuous
 ```
+
+### API Limitations
+The Finnhub free tier provides:
+- ✅ Real-time quotes
+- ✅ Company profiles
+- ❌ Historical candle data (required for indicators)
+- ❌ Technical analysis endpoints
+
+For production use, you'll need:
+1. Upgrade to a paid Finnhub plan, OR
+2. Use an alternative data provider (Alpha Vantage, Yahoo Finance, etc.)
 
 ## Understanding the Output
 

@@ -4,7 +4,6 @@ Technical indicator calculations for intraday data
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, Tuple
-import pandas_ta as ta
 
 import config
 
@@ -20,7 +19,22 @@ def calculate_rsi(prices: pd.Series, period: int = config.RSI_PERIOD) -> pd.Seri
     Returns:
         RSI values as pandas Series
     """
-    return ta.rsi(prices, length=period)
+    # Calculate price changes
+    delta = prices.diff()
+    
+    # Separate gains and losses
+    gains = delta.where(delta > 0, 0)
+    losses = -delta.where(delta < 0, 0)
+    
+    # Calculate average gains and losses
+    avg_gains = gains.rolling(window=period).mean()
+    avg_losses = losses.rolling(window=period).mean()
+    
+    # Calculate RS and RSI
+    rs = avg_gains / avg_losses
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
 
 
 def calculate_bollinger_bands(prices: pd.Series, 
@@ -37,20 +51,12 @@ def calculate_bollinger_bands(prices: pd.Series,
     Returns:
         Tuple of (upper_band, middle_band, lower_band)
     """
-    bb = ta.bbands(prices, length=period, std=std_dev)
-    if bb is not None and not bb.empty:
-        # pandas_ta returns columns like BBL_20_2.0, BBM_20_2.0, BBU_20_2.0
-        lower = bb.iloc[:, 0]  # Lower band
-        middle = bb.iloc[:, 1]  # Middle band (SMA)
-        upper = bb.iloc[:, 2]  # Upper band
-        return upper, middle, lower
-    else:
-        # Fallback calculation if pandas_ta fails
-        middle = prices.rolling(window=period).mean()
-        std = prices.rolling(window=period).std()
-        upper = middle + (std_dev * std)
-        lower = middle - (std_dev * std)
-        return upper, middle, lower
+    # Calculate moving average and standard deviation
+    middle = prices.rolling(window=period).mean()
+    std = prices.rolling(window=period).std()
+    upper = middle + (std_dev * std)
+    lower = middle - (std_dev * std)
+    return upper, middle, lower
 
 
 def calculate_macd(prices: pd.Series,
@@ -69,21 +75,20 @@ def calculate_macd(prices: pd.Series,
     Returns:
         Tuple of (macd_line, signal_line, histogram)
     """
-    macd_result = ta.macd(prices, fast=fast, slow=slow, signal=signal)
-    if macd_result is not None and not macd_result.empty:
-        # pandas_ta returns columns like MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
-        macd_line = macd_result.iloc[:, 0]
-        histogram = macd_result.iloc[:, 1]
-        signal_line = macd_result.iloc[:, 2]
-        return macd_line, signal_line, histogram
-    else:
-        # Fallback calculation
-        ema_fast = prices.ewm(span=fast, adjust=False).mean()
-        ema_slow = prices.ewm(span=slow, adjust=False).mean()
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-        histogram = macd_line - signal_line
-        return macd_line, signal_line, histogram
+    # Calculate exponential moving averages
+    ema_fast = prices.ewm(span=fast, adjust=False).mean()
+    ema_slow = prices.ewm(span=slow, adjust=False).mean()
+    
+    # Calculate MACD line
+    macd_line = ema_fast - ema_slow
+    
+    # Calculate signal line
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    
+    # Calculate histogram
+    histogram = macd_line - signal_line
+    
+    return macd_line, signal_line, histogram
 
 
 def calculate_obv(prices: pd.Series, volumes: pd.Series, 
@@ -99,15 +104,16 @@ def calculate_obv(prices: pd.Series, volumes: pd.Series,
     Returns:
         Tuple of (obv, obv_sma)
     """
-    # Calculate OBV
-    obv = ta.obv(prices, volumes)
-    if obv is None:
-        # Fallback calculation
-        price_diff = prices.diff()
-        volume_direction = volumes.copy()
-        volume_direction[price_diff < 0] *= -1
-        volume_direction[price_diff == 0] = 0
-        obv = volume_direction.cumsum()
+    # Calculate price direction
+    price_diff = prices.diff()
+    
+    # Create volume direction based on price movement
+    volume_direction = volumes.copy()
+    volume_direction[price_diff < 0] *= -1
+    volume_direction[price_diff == 0] = 0
+    
+    # Calculate OBV as cumulative sum
+    obv = volume_direction.cumsum()
     
     # Calculate OBV's SMA
     obv_sma = obv.rolling(window=sma_period).mean()

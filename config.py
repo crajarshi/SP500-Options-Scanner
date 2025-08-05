@@ -55,7 +55,7 @@ API_RETRY_DELAY = 5  # Seconds between retries
 # Cache settings
 CACHE_DIR = 'cache/intraday'
 CACHE_EXPIRY_MINUTES = 15  # Cache validity period
-S&P500_CACHE_EXPIRY_DAYS = 1  # S&P 500 list cache validity
+SP500_CACHE_EXPIRY_DAYS = 1  # S&P 500 list cache validity
 
 # Output settings
 OUTPUT_DIR = 'output/intraday_scans'

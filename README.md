@@ -33,10 +33,30 @@ cd TradingAnalytics
 pip install -r requirements.txt
 ```
 
-3. Set up your Finnhub API key:
+3. Set up your API keys:
 ```bash
 cp .env.example .env
-# Edit .env and add your Finnhub API key
+# Edit .env and add your API keys
+```
+
+## API Setup
+
+### Alpaca (Recommended - Default)
+The scanner now uses Alpaca Market Data API by default, which provides reliable historical intraday data.
+
+1. Sign up for a free Alpaca account at https://alpaca.markets
+2. Get your API keys from the dashboard
+3. Add to `.env` or use the defaults in `config.py`:
+```bash
+ALPACA_API_KEY_ID=your_api_key_id
+ALPACA_SECRET_KEY=your_secret_key
+ALPACA_BASE_URL=https://paper-api.alpaca.markets  # For paper trading
+```
+
+### Finnhub (Legacy)
+If you prefer to use Finnhub (requires paid plan for historical data):
+```bash
+python sp500_options_scanner.py --finnhub
 ```
 
 ## Configuration
@@ -70,16 +90,20 @@ python sp500_options_scanner.py --continuous
 python sp500_options_scanner.py --demo --continuous  # Demo + continuous
 ```
 
-### API Limitations
-The Finnhub free tier provides:
-- ✅ Real-time quotes
-- ✅ Company profiles
-- ❌ Historical candle data (required for indicators)
-- ❌ Technical analysis endpoints
+### Data Provider Comparison
 
-For production use, you'll need:
-1. Upgrade to a paid Finnhub plan, OR
-2. Use an alternative data provider (Alpha Vantage, Yahoo Finance, etc.)
+**Alpaca (Default)**
+- ✅ Free historical intraday data (15-min bars)
+- ✅ Reliable and fast API
+- ✅ No rate limiting issues for S&P 500 scans
+- ✅ Extended hours data available
+- ✅ Paper trading account included
+
+**Finnhub (Legacy)**
+- ✅ Real-time quotes (free tier)
+- ✅ Company profiles (free tier)
+- ❌ Historical candle data (paid only)
+- ❌ Technical analysis endpoints (paid only)
 
 ## Understanding the Output
 

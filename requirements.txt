@@ -4,6 +4,9 @@ pandas
 numpy
 python-dotenv
 
+# Trading APIs
+alpaca-py
+
 # Technical analysis
 # Note: pandas-ta has compatibility issues with Python 3.13
 # We'll implement indicators manually

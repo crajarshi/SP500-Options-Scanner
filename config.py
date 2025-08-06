@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# API Configuration
+# API Configuration - ALPACA (Primary)
+ALPACA_API_KEY_ID = os.getenv('ALPACA_API_KEY_ID', 'PKY99PILSOIXLP7953TG')
+ALPACA_SECRET_KEY = os.getenv('ALPACA_SECRET_KEY', 'n3VUzYUwojjyOzs4k1IYYj1lPNBVCqh9vWXZCL6D')
+ALPACA_BASE_URL = os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')
+ALPACA_DATA_URL = 'https://data.alpaca.markets'  # Market data endpoint
+
+# Legacy Finnhub configuration (kept for backward compatibility)
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', 'd296qf9r01qhoena9cp0d296qf9r01qhoena9cpg')
 FINNHUB_BASE_URL = 'https://finnhub.io/api/v1'
 

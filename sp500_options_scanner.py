@@ -21,6 +21,7 @@ from indicators import calculate_all_indicators
 from signals import analyze_stock, rank_stocks
 from dashboard import OptionsScannnerDashboard
 from demo_data_generator import generate_demo_intraday_data, get_demo_sp500_tickers
+from alpaca_data_provider import AlpacaDataProvider
 
 # Set up logging
 logging.basicConfig(
@@ -37,14 +38,22 @@ logger = logging.getLogger(__name__)
 class SP500OptionsScanner:
     """Main scanner class"""
     
-    def __init__(self, demo_mode=False):
-        self.api_key = config.FINNHUB_API_KEY
+    def __init__(self, demo_mode=False, use_alpaca=True):
         self.dashboard = OptionsScannnerDashboard()
         self.session = requests.Session()
         self.errors = []
         self.running = True
         self.demo_mode = demo_mode
+        self.use_alpaca = use_alpaca
         
+        # Initialize data provider
+        if self.use_alpaca and not self.demo_mode:
+            self.data_provider = AlpacaDataProvider()
+            logger.info("Using Alpaca Market Data API")
+        else:
+            self.data_provider = None
+            self.api_key = config.FINNHUB_API_KEY
+            
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
         
@@ -111,6 +120,13 @@ class SP500OptionsScanner:
             logger.info(f"Loaded {len(cached_tickers)} S&P 500 tickers from cache")
             return cached_tickers
         
+        # Use Alpaca data provider if available
+        if self.use_alpaca and self.data_provider:
+            tickers = self.data_provider.get_sp500_tickers()
+            if tickers:
+                self.save_cache(tickers, 'sp500_tickers')
+                return tickers
+        
         # Try to fetch from Wikipedia
         try:
             import pandas as pd
@@ -146,6 +162,22 @@ class SP500OptionsScanner:
         )
         if cached_data is not None:
             return cached_data
+        
+        # Use Alpaca if available
+        if self.use_alpaca and self.data_provider:
+            df = self.data_provider.fetch_bars(
+                symbol=ticker,
+                timeframe='15Min',  # 15-minute bars
+                days_back=config.LOOKBACK_DAYS
+            )
+            if df is not None and not df.empty:
+                # Save to cache
+                self.save_cache(df, 'intraday_data', cache_identifier)
+                return df
+            else:
+                logger.warning(f"No data from Alpaca for {ticker}")
+                # Don't fall through to Finnhub, return None
+                return None
         
         # Calculate time range - FIXED to use proper UNIX timestamp calculation
         today = datetime.now()
@@ -340,9 +372,27 @@ class SP500OptionsScanner:
                 logger.error(f"Error in continuous scan: {e}")
                 time.sleep(60)  # Wait before retrying
     
+    def test_connection(self):
+        """Test data provider connection"""
+        if self.use_alpaca and self.data_provider:
+            logger.info("Testing Alpaca connection...")
+            if self.data_provider.test_connection():
+                logger.info("✓ Alpaca connection successful!")
+                return True
+            else:
+                logger.error("✗ Alpaca connection failed!")
+                return False
+        return True
+    
     def run_once(self):
         """Run a single scan"""
         logger.info("Running single scan...")
+        
+        # Test connection first
+        if not self.demo_mode and not self.test_connection():
+            logger.error("Cannot proceed without data connection")
+            return
+            
         analyses = self.run_scan()
         
         if analyses:
@@ -368,9 +418,13 @@ def main():
     # Check for command line arguments
     demo_mode = '--demo' in sys.argv
     continuous_mode = '--continuous' in sys.argv
+    use_finnhub = '--finnhub' in sys.argv  # Option to use legacy Finnhub
     
     # Create scanner
-    scanner = SP500OptionsScanner(demo_mode=demo_mode)
+    scanner = SP500OptionsScanner(
+        demo_mode=demo_mode,
+        use_alpaca=not use_finnhub  # Use Alpaca by default
+    )
     
     if continuous_mode:
         scanner.run_continuous()

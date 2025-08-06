@@ -106,6 +106,37 @@ class OptionsScannnerDashboard:
             border_style="bright_blue"
         )
     
+    def create_scoring_explanation(self) -> Panel:
+        """Create a panel explaining the scoring system"""
+        explanation_text = (
+            "[bold]Scoring System Breakdown:[/bold]\n\n"
+            "📊 [cyan]Composite Score = [/cyan]\n"
+            f"   MACD ({config.WEIGHT_MACD*100:.0f}%) + "
+            f"RSI ({config.WEIGHT_RSI*100:.0f}%) + "
+            f"Bollinger ({config.WEIGHT_BOLLINGER*100:.0f}%) + \n"
+            f"   OBV ({config.WEIGHT_OBV*100:.0f}%) + "
+            f"ATR ({config.WEIGHT_ATR*100:.0f}%)\n\n"
+            "[bold]Individual Indicators:[/bold]\n"
+            "• [yellow]RSI[/yellow]: 100pts if oversold (<30), 0pts if overbought (>70)\n"
+            "• [yellow]MACD[/yellow]: 100pts if bullish crossover, 0pts otherwise\n"
+            "• [yellow]Bollinger[/yellow]: 100pts at lower band, 0pts at upper band\n"
+            "• [yellow]OBV[/yellow]: 100pts if above 20-SMA, 0pts if below\n"
+            "• [yellow]ATR[/yellow]: 100pts if expanding (>30-SMA), 0pts if contracting\n\n"
+            "[bold]Signal Thresholds:[/bold]\n"
+            f"• [bright_green]STRONG BUY[/bright_green]: Score > {config.SIGNAL_STRONG_BUY}\n"
+            f"• [green]BUY[/green]: Score {config.SIGNAL_BUY}-{config.SIGNAL_STRONG_BUY}\n"
+            f"• [white]HOLD[/white]: Score {config.SIGNAL_HOLD_MIN}-{config.SIGNAL_HOLD_MAX}\n"
+            f"• [red]AVOID[/red]: Score < {config.SIGNAL_HOLD_MIN}"
+        )
+        
+        return Panel(
+            explanation_text,
+            title="📈 How Scoring Works",
+            box=box.ROUNDED,
+            border_style="blue",
+            padding=(1, 2)
+        )
+    
     def create_results_table(self, analyses: List[Dict], limit: int = None) -> Table:
         """Create results table"""
         if limit is None:
@@ -118,18 +149,22 @@ class OptionsScannnerDashboard:
             title_style="bold white"
         )
         
-        # Add columns
-        table.add_column("Rank", style="cyan", width=6, justify="center")
-        table.add_column("Ticker", style="bold white", width=8)
-        table.add_column("Price", style="white", width=10, justify="right")
-        table.add_column("Chg%", width=8, justify="right")
-        table.add_column("Score", style="bold", width=7, justify="center")
-        table.add_column("ATR", width=8, justify="right")
-        table.add_column("Vol", width=8, justify="center")
-        table.add_column("Signal", width=25)
+        # Add columns - Enhanced with individual scores
+        table.add_column("Rank", style="cyan", width=5, justify="center")
+        table.add_column("Ticker", style="bold white", width=7)
+        table.add_column("Price", style="white", width=9, justify="right")
+        table.add_column("Chg%", width=7, justify="right")
+        table.add_column("Score", style="bold", width=6, justify="center")
         
-        if config.SHOW_DETAILED_INDICATORS:
-            table.add_column("Indicators", style="dim white", width=30)
+        # Individual indicator scores
+        table.add_column("RSI", width=5, justify="center")
+        table.add_column("MACD", width=5, justify="center")
+        table.add_column("BB", width=5, justify="center")
+        table.add_column("OBV", width=5, justify="center")
+        table.add_column("ATR", width=5, justify="center")
+        
+        table.add_column("Vol$", width=7, justify="right")
+        table.add_column("Signal", width=22)
         
         # Add rows
         for i, analysis in enumerate(analyses[:limit]):
@@ -150,16 +185,34 @@ class OptionsScannnerDashboard:
             # Signal with emoji
             signal = f"{analysis['signal']['emoji']} {analysis['signal']['text']}"
             
-            # ATR value and trend
+            # Get individual scores
+            scores = analysis['scores']
+            
+            # Format individual indicator scores with colors
+            def format_score(score, threshold=50):
+                if score >= 80:
+                    return Text(f"{score:.0f}", style="bright_green")
+                elif score >= threshold:
+                    return Text(f"{score:.0f}", style="green")
+                elif score > 0:
+                    return Text(f"{score:.0f}", style="yellow")
+                else:
+                    return Text(f"{score:.0f}", style="red")
+            
+            rsi_score_text = format_score(scores.get('rsi_score', 0))
+            macd_score_text = format_score(scores.get('macd_score', 0))
+            bb_score_text = format_score(scores.get('bollinger_score', 0))
+            obv_score_text = format_score(scores.get('obv_score', 0))
+            atr_score_text = format_score(scores.get('atr_score', 0))
+            
+            # ATR value with trend
             atr_value = analysis['indicators'].get('atr_value', 0)
             atr_trend = analysis['indicators'].get('atr_trend', 'Unknown')
-            atr_text = f"${atr_value:.2f}"
             
-            # Volatility trend indicator
             if atr_trend == 'Rising':
-                vol_trend = Text("↑", style="green")
+                vol_text = Text(f"${atr_value:.1f}↑", style="green")
             else:
-                vol_trend = Text("↓", style="red")
+                vol_text = Text(f"${atr_value:.1f}↓", style="yellow")
             
             # Color signal text based on type
             signal_colors = {
@@ -169,24 +222,22 @@ class OptionsScannnerDashboard:
                 'AVOID': config.COLOR_AVOID
             }
             signal_color = signal_colors.get(analysis['signal']['type'], 'white')
+            signal_text = Text(analysis['signal']['text'], style=signal_color)
             
-            row = [str(rank), ticker, price, change, score_text, 
-                   atr_text, vol_trend,
-                   Text(signal, style=signal_color)]
-            
-            # Add indicators if enabled
-            if config.SHOW_DETAILED_INDICATORS:
-                # Build detailed indicators text with ATR
-                rsi_val = analysis['indicators']['rsi']
-                indicators_parts = [
-                    f"RSI:{rsi_val:.0f}",
-                    f"MACD:{'✓' if analysis['indicators']['macd_bullish'] else '✗'}",
-                    f"BB:{analysis['indicators']['bb_position']:.0f}%",
-                    f"OBV:{'✓' if analysis['indicators']['obv_above_sma'] else '✗'}",
-                    f"ATR:{'✓' if analysis['scores'].get('atr_score', 0) > 50 else '✗'}"
-                ]
-                indicators_text = " ".join(indicators_parts)
-                row.append(indicators_text)
+            row = [
+                str(rank), 
+                ticker, 
+                price, 
+                change, 
+                score_text,
+                rsi_score_text,
+                macd_score_text,
+                bb_score_text,
+                obv_score_text,
+                atr_score_text,
+                vol_text,
+                signal_text
+            ]
             
             table.add_row(*row)
         
@@ -213,10 +264,11 @@ class OptionsScannnerDashboard:
         # Calculate next scan time
         next_scan = scan_time + timedelta(minutes=config.REFRESH_INTERVAL_MINUTES)
         
-        # Create layout
+        # Create layout with scoring explanation
         layout = Layout()
         layout.split_column(
             Layout(self.create_header(scan_time, next_scan), size=5),
+            Layout(self.create_scoring_explanation(), size=12),
             Layout(self.create_results_table(analyses), size=20),
             Layout(self.create_footer(), size=3)
         )

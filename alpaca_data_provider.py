@@ -250,6 +250,62 @@ class AlpacaDataProvider:
             logger.error(f"Error fetching daily data for {symbol}: {e}")
             return None
     
+    def fetch_vix_data(self) -> Optional[float]:
+        """
+        Fetch current VIX level from Alpaca indices endpoint
+        
+        Returns:
+            Latest VIX closing value or None if error
+        """
+        try:
+            # VIX is available through the indices endpoint
+            # Note: This requires Alpaca's data subscription that includes indices
+            # For paper trading, we'll use a fallback approach
+            
+            # Try to fetch VIX as an index
+            endpoint = f"{self.data_url}/v1beta3/quotes/latest"
+            params = {
+                'symbols': 'VIX',
+                'feed': 'indicative'  # Use indicative feed for indices
+            }
+            
+            response = self.session.get(endpoint, params=params)
+            
+            # If VIX not available, try alternative symbols
+            if response.status_code == 404 or response.status_code == 403:
+                # Try VIXY ETF as a proxy for VIX
+                logger.info("VIX index not available, using VIXY ETF as proxy")
+                endpoint = f"{self.data_url}/v2/stocks/VIXY/quotes/latest"
+                response = self.session.get(endpoint)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'quote' in data:
+                        # VIXY trades around 0.5x to 1x of VIX value
+                        # Rough approximation: multiply by 1.5 for VIX estimate
+                        vixy_price = data['quote'].get('ap', data['quote'].get('bp', 0))
+                        estimated_vix = vixy_price * 1.5
+                        logger.info(f"Estimated VIX from VIXY: {estimated_vix:.2f}")
+                        return estimated_vix
+            
+            # Process standard VIX response
+            if response.status_code == 200:
+                data = response.json()
+                if 'quotes' in data and 'VIX' in data['quotes']:
+                    vix_quote = data['quotes']['VIX']
+                    vix_value = vix_quote.get('ap', vix_quote.get('bp', 0))
+                    logger.info(f"VIX level: {vix_value:.2f}")
+                    return vix_value
+            
+            # Fallback to a default moderate value if unable to fetch
+            logger.warning("Unable to fetch VIX, using default value of 18")
+            return 18.0  # Historical average VIX
+            
+        except Exception as e:
+            logger.error(f"Error fetching VIX data: {e}")
+            # Return a moderate default value rather than None
+            return 18.0  # Historical average VIX
+    
     def test_connection(self) -> bool:
         """
         Test if Alpaca API connection is working

@@ -39,9 +39,17 @@ OBV_SMA_PERIOD = 20  # 20 bars = 5 hours
 ATR_PERIOD = 14  # 14 bars for ATR calculation
 ATR_SMA_PERIOD = 30  # 30 bars for ATR SMA
 
-# Market regime filter
+# Market regime filter - Three factors
 MARKET_REGIME_MA_PERIOD = 50  # 50-day moving average for SPY
+MARKET_BREADTH_THRESHOLD = 60  # Minimum % of stocks above their 50MA for bullish
+VIX_THRESHOLD = 25  # Maximum VIX level for bullish regime
+VIX_WARNING_THRESHOLD = 20  # VIX level for caution alert
 MIN_TRADING_DAYS_REQUIRED = 252  # Minimum days of history required
+
+# Future defensive mode thresholds (Phase 2)
+BEARISH_BREADTH_THRESHOLD = 40  # When to consider put opportunities
+EXTREME_VIX_THRESHOLD = 30  # High volatility opportunities
+DEFENSIVE_MODE_ENABLED = False  # Future feature flag
 
 # Scoring thresholds
 RSI_OVERSOLD = 30
@@ -70,6 +78,9 @@ CACHE_DIR = 'cache/intraday'
 CACHE_EXPIRY_MINUTES = 15  # Cache validity period for intraday data
 SP500_CACHE_EXPIRY_DAYS = 1  # S&P 500 list cache validity
 DAILY_CACHE_EXPIRY_HOURS = 24  # Daily data cache validity
+BREADTH_CACHE_HOURS = 24  # Cache market breadth calculation
+VIX_CACHE_MINUTES = 60  # Cache VIX data for 1 hour
+SPY_CACHE_MINUTES = 60  # Cache SPY data for 1 hour
 
 # Output settings
 OUTPUT_DIR = 'output/intraday_scans'

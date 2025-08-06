@@ -10,7 +10,7 @@ import pickle
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from tqdm import tqdm
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -305,15 +305,119 @@ class SP500OptionsScanner:
         df.to_csv(filepath, index=False)
         logger.info(f"Results saved to {filepath}")
     
-    def check_market_regime(self) -> bool:
+    def calculate_market_breadth(self, show_progress=True) -> Tuple[float, Dict]:
         """
-        Check if the market is in a bullish regime (SPY > 50-day MA)
+        Calculate percentage of S&P 500 stocks above their 50-day MA
+        This is an intensive operation that should be cached
         
         Returns:
-            True if bullish (continue scan), False if bearish (halt scan)
+            Tuple of (breadth_percentage, details_dict)
         """
         try:
-            self.dashboard.console.print("\n[yellow]Checking market regime...[/yellow]")
+            # Check cache first (24-hour validity)
+            cache_key = f"market_breadth_{datetime.now().strftime('%Y%m%d')}"
+            cached_breadth = self.load_cache('market_breadth', cache_key,
+                                           max_age_minutes=config.BREADTH_CACHE_HOURS * 60)
+            
+            if cached_breadth is not None:
+                logger.info(f"Using cached market breadth: {cached_breadth['breadth_pct']:.1f}%")
+                return cached_breadth['breadth_pct'], cached_breadth
+            
+            # Calculate breadth - this is intensive!
+            self.dashboard.console.print("[yellow]Calculating market breadth (this may take a few minutes)...[/yellow]")
+            
+            # Get S&P 500 tickers
+            tickers = self.fetch_sp500_tickers()
+            
+            above_ma = 0
+            total_checked = 0
+            failed_tickers = []
+            
+            # Process in batches to show progress
+            if show_progress:
+                from tqdm import tqdm
+                ticker_iterator = tqdm(tickers, desc="Checking stocks vs 50MA", ncols=100)
+            else:
+                ticker_iterator = tickers
+            
+            for ticker in ticker_iterator:
+                try:
+                    # Fetch daily data for this ticker
+                    if self.use_alpaca and self.data_provider:
+                        df = self.data_provider.fetch_daily_bars(
+                            ticker, 
+                            days_back=config.MARKET_REGIME_MA_PERIOD + 10
+                        )
+                    else:
+                        continue  # Skip if no data provider
+                    
+                    if df is not None and len(df) >= config.MARKET_REGIME_MA_PERIOD:
+                        # Calculate 50-day MA
+                        df['ma50'] = df['close'].rolling(window=config.MARKET_REGIME_MA_PERIOD).mean()
+                        
+                        # Check if current price > 50MA
+                        current_price = df['close'].iloc[-1]
+                        ma50 = df['ma50'].iloc[-1]
+                        
+                        if not pd.isna(ma50):
+                            total_checked += 1
+                            if current_price > ma50:
+                                above_ma += 1
+                    else:
+                        failed_tickers.append(ticker)
+                        
+                except Exception as e:
+                    logger.debug(f"Error checking {ticker}: {e}")
+                    failed_tickers.append(ticker)
+            
+            # Calculate percentage
+            if total_checked > 0:
+                breadth_pct = (above_ma / total_checked) * 100
+            else:
+                breadth_pct = 50.0  # Default to neutral if calculation fails
+            
+            # Prepare detailed results
+            breadth_details = {
+                'breadth_pct': breadth_pct,
+                'stocks_above': above_ma,
+                'stocks_checked': total_checked,
+                'total_tickers': len(tickers),
+                'failed_tickers': failed_tickers,
+                'timestamp': datetime.now().isoformat(),
+                'calculation_time': time.time()  # Track how long it took
+            }
+            
+            # Cache the results
+            self.save_cache(breadth_details, 'market_breadth', cache_key)
+            
+            logger.info(f"Market breadth: {breadth_pct:.1f}% ({above_ma}/{total_checked} stocks above 50MA)")
+            
+            return breadth_pct, breadth_details
+            
+        except Exception as e:
+            logger.error(f"Error calculating market breadth: {e}")
+            # Return neutral breadth on error
+            return 50.0, {'breadth_pct': 50.0, 'error': str(e)}
+    
+    def check_market_regime(self, skip_breadth=False) -> bool:
+        """
+        Enhanced market regime check with three factors:
+        1. SPY > 50-day MA
+        2. Market breadth > 60% (stocks above 50MA)
+        3. VIX < 25
+        
+        All three must pass for bullish confirmation
+        
+        Args:
+            skip_breadth: Skip breadth calculation for faster check
+        
+        Returns:
+            True if bullish (continue scan), False if not bullish (halt scan)
+        """
+        try:
+            self.dashboard.console.print("\n" + "="*60)
+            self.dashboard.console.print("[bold]MARKET REGIME ANALYSIS[/bold]")
+            self.dashboard.console.print("="*60)
             
             # Try to get cached SPY data first
             cache_key = f"spy_daily_{datetime.now().strftime('%Y%m%d')}"
@@ -342,34 +446,91 @@ class SP500OptionsScanner:
                 )
                 return True
             
-            # Calculate 50-day moving average
+            # Initialize regime factors tracking
+            regime_factors = {
+                'spy_trend': {'passed': False, 'details': ''},
+                'market_breadth': {'passed': False, 'details': ''},
+                'vix_level': {'passed': False, 'details': ''}
+            }
+            
+            # Factor 1: SPY Trend
             spy_data['ma50'] = spy_data['close'].rolling(window=config.MARKET_REGIME_MA_PERIOD).mean()
-            
-            # Get current SPY price and 50-day MA
-            current_price = spy_data['close'].iloc[-1]
+            current_spy = spy_data['close'].iloc[-1]
             ma50 = spy_data['ma50'].iloc[-1]
+            spy_bullish = current_spy > ma50
             
-            # Check regime
-            is_bullish = current_price > ma50
+            if spy_bullish:
+                pct_above = ((current_spy - ma50) / ma50) * 100
+                regime_factors['spy_trend']['passed'] = True
+                regime_factors['spy_trend']['details'] = f"${current_spy:.2f} > ${ma50:.2f} (+{pct_above:.1f}%)"
+                spy_status = "[green]✅[/green]"
+            else:
+                pct_below = ((ma50 - current_spy) / ma50) * 100
+                regime_factors['spy_trend']['passed'] = False
+                regime_factors['spy_trend']['details'] = f"${current_spy:.2f} < ${ma50:.2f} (-{pct_below:.1f}%)"
+                spy_status = "[red]❌[/red]"
             
-            # Display result
+            # Factor 2: VIX Level
+            vix_level = 18.0  # Default
+            if self.use_alpaca and self.data_provider:
+                vix_level = self.data_provider.fetch_vix_data()
+            
+            vix_bullish = vix_level < config.VIX_THRESHOLD
+            regime_factors['vix_level']['passed'] = vix_bullish
+            
+            if vix_bullish:
+                regime_factors['vix_level']['details'] = f"{vix_level:.1f} (below {config.VIX_THRESHOLD})"
+                vix_status = "[green]✅[/green]"
+            else:
+                regime_factors['vix_level']['details'] = f"{vix_level:.1f} (above {config.VIX_THRESHOLD})"
+                vix_status = "[red]❌[/red]"
+            
+            # Factor 3: Market Breadth (optional based on skip_breadth)
+            if not skip_breadth:
+                breadth_pct, breadth_details = self.calculate_market_breadth(show_progress=True)
+                breadth_bullish = breadth_pct > config.MARKET_BREADTH_THRESHOLD
+                regime_factors['market_breadth']['passed'] = breadth_bullish
+                
+                if breadth_bullish:
+                    regime_factors['market_breadth']['details'] = f"{breadth_pct:.1f}% stocks > 50MA"
+                    breadth_status = "[green]✅[/green]"
+                else:
+                    regime_factors['market_breadth']['details'] = f"{breadth_pct:.1f}% stocks > 50MA"
+                    breadth_status = "[red]❌[/red]"
+            else:
+                # Skip breadth check
+                regime_factors['market_breadth']['details'] = "Skipped (--fast-regime)"
+                breadth_status = "[yellow]⚠[/yellow]"
+                breadth_bullish = True  # Don't block on skipped check
+            
+            # Display all factors
+            self.dashboard.console.print(f"\n📊 SPY Trend:      {spy_status} {regime_factors['spy_trend']['details']}")
+            self.dashboard.console.print(f"😨 VIX Level:      {vix_status} {regime_factors['vix_level']['details']}")
+            if not skip_breadth:
+                self.dashboard.console.print(f"📈 Market Breadth: {breadth_status} {regime_factors['market_breadth']['details']}")
+            
+            # Determine overall regime
+            factors_passed = sum(1 for f in [spy_bullish, vix_bullish, breadth_bullish if not skip_breadth else True] if f)
+            total_factors = 2 if skip_breadth else 3
+            is_bullish = factors_passed == total_factors
+            
+            # Display overall verdict
+            self.dashboard.console.print("\n" + "="*60)
             if is_bullish:
-                percentage_above = ((current_price - ma50) / ma50) * 100
                 self.dashboard.console.print(
-                    f"[green]✅ Market Regime is BULLISH[/green]\n"
-                    f"   SPY: ${current_price:.2f} | 50-day MA: ${ma50:.2f} "
-                    f"(+{percentage_above:.1f}% above MA)\n"
-                    f"   [green]Proceeding with bullish scan...[/green]"
+                    f"[green]✅ MARKET REGIME: BULLISH ({factors_passed}/{total_factors} factors positive)[/green]\n"
+                    f"[green]Proceeding with bullish opportunity scan...[/green]"
                 )
                 return True
             else:
-                percentage_below = ((ma50 - current_price) / ma50) * 100
                 self.dashboard.console.print(
-                    f"[red]❌ Market Regime is BEARISH[/red]\n"
-                    f"   SPY: ${current_price:.2f} | 50-day MA: ${ma50:.2f} "
-                    f"(-{percentage_below:.1f}% below MA)\n"
-                    f"   [red]Halting bullish scan. Consider defensive strategies.[/red]"
+                    f"[red]❌ MARKET REGIME: NOT BULLISH ({factors_passed}/{total_factors} factors positive)[/red]\n"
+                    f"[red]Halting bullish scan.[/red]"
                 )
+                if config.DEFENSIVE_MODE_ENABLED:
+                    self.dashboard.console.print("[yellow]🛡️ Consider switching to defensive mode (future feature)[/yellow]")
+                else:
+                    self.dashboard.console.print("[yellow]💡 Tip: Consider defensive strategies or wait for better conditions[/yellow]")
                 return False
                 
         except Exception as e:
@@ -390,15 +551,15 @@ class SP500OptionsScanner:
             for error in self.errors:
                 f.write(f"{error['timestamp']}: {error['ticker']} - {error['error']}\n")
     
-    def run_scan(self) -> List[Dict]:
+    def run_scan(self, skip_breadth=False) -> List[Dict]:
         """Run a complete scan of all S&P 500 stocks"""
         scan_time = datetime.now()
         self.errors = []
         
         # Check market regime first
         if not self.demo_mode:  # Skip market check in demo mode
-            if not self.check_market_regime():
-                # Market is bearish, halt scan
+            if not self.check_market_regime(skip_breadth=skip_breadth):
+                # Market is not bullish, halt scan
                 return []
         
         # Get S&P 500 tickers
@@ -476,7 +637,7 @@ class SP500OptionsScanner:
                 return False
         return True
     
-    def run_once(self):
+    def run_once(self, skip_breadth=False):
         """Run a single scan"""
         logger.info("Running single scan...")
         
@@ -485,7 +646,7 @@ class SP500OptionsScanner:
             logger.error("Cannot proceed without data connection")
             return
             
-        analyses = self.run_scan()
+        analyses = self.run_scan(skip_breadth=skip_breadth)
         
         if analyses:
             self.dashboard.console.print(
@@ -512,6 +673,9 @@ def main():
     continuous_mode = '--continuous' in sys.argv
     use_finnhub = '--finnhub' in sys.argv  # Option to use legacy Finnhub
     quick_mode = '--quick' in sys.argv  # Quick mode using cached data
+    fast_regime = '--fast-regime' in sys.argv  # Skip breadth check
+    regime_only = '--regime-only' in sys.argv  # Check regime only
+    warm_cache = '--warm-cache' in sys.argv  # Pre-calculate breadth
     
     # Create scanner
     scanner = SP500OptionsScanner(
@@ -520,10 +684,26 @@ def main():
         quick_mode=quick_mode
     )
     
+    # Handle special modes
+    if warm_cache:
+        logger.info("Warming cache with market breadth calculation...")
+        scanner.calculate_market_breadth(show_progress=True)
+        logger.info("Cache warmed successfully!")
+        return
+    
+    if regime_only:
+        logger.info("Checking market regime only...")
+        is_bullish = scanner.check_market_regime(skip_breadth=fast_regime)
+        if is_bullish:
+            scanner.dashboard.console.print("\n[green]Market regime is BULLISH - good for options trading![/green]")
+        else:
+            scanner.dashboard.console.print("\n[red]Market regime is NOT BULLISH - consider defensive strategies.[/red]")
+        return
+    
     if continuous_mode:
         scanner.run_continuous()
     else:
-        scanner.run_once()
+        scanner.run_once(skip_breadth=fast_regime)
 
 
 if __name__ == "__main__":

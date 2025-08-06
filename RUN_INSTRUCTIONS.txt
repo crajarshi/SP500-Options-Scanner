@@ -1,0 +1,72 @@
+==============================================================
+     S&P 500 OPTIONS SCANNER - STEP-BY-STEP INSTRUCTIONS
+==============================================================
+
+STEP 1: OPEN TERMINAL
+---------------------
+- Mac: Press Cmd+Space, type "Terminal", press Enter
+- Windows: Press Win+R, type "cmd", press Enter
+- Linux: Press Ctrl+Alt+T
+
+STEP 2: NAVIGATE TO PROJECT FOLDER
+----------------------------------
+cd /Users/rchakraborty/my-project/TradingAnalytics
+
+STEP 3: ACTIVATE PYTHON ENVIRONMENT
+-----------------------------------
+source venv/bin/activate
+
+(You should see (venv) appear in your terminal)
+
+STEP 4: RUN THE SCANNER
+-----------------------
+python sp500_options_scanner.py
+
+STEP 5: WAIT FOR RESULTS
+------------------------
+The scanner will:
+1. Connect to Alpaca (2 seconds)
+2. Fetch S&P 500 list (3 seconds)
+3. Analyze each stock (45-60 seconds)
+4. Display top opportunities
+5. Save results to CSV file
+
+==============================================================
+                    RUNNING OPTIONS
+==============================================================
+
+NORMAL RUN (with real market data):
+python sp500_options_scanner.py
+
+DEMO MODE (no API needed):
+python sp500_options_scanner.py --demo
+
+CONTINUOUS MODE (auto-refresh):
+python sp500_options_scanner.py --continuous
+
+DEMO + CONTINUOUS:
+python sp500_options_scanner.py --demo --continuous
+
+==============================================================
+                    EXPECTED OUTPUT
+==============================================================
+
+You will see:
+1. "Testing Alpaca connection..." ✓
+2. Progress bar: [████████░░░] 225/503
+3. Results table with top stocks
+4. Signal counts summary
+
+Results are saved in:
+- output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv
+
+==============================================================
+                      NEED HELP?
+==============================================================
+
+If you see errors:
+1. Make sure venv is activated (see (venv) in terminal)
+2. Try demo mode first: python sp500_options_scanner.py --demo
+3. Check logs/error_log.txt for details
+
+==============================================================

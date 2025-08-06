@@ -4,6 +4,7 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Alpaca](https://img.shields.io/badge/API-Alpaca-green.svg)
 ![Finnhub](https://img.shields.io/badge/API-Finnhub-orange.svg)
 
 ## Features
@@ -20,24 +21,148 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 - **Smart Caching**: Reduces API calls and improves performance
 - **Comprehensive Error Handling**: Continues processing despite individual stock errors
 
-## Installation
+## 🚀 Quick Start Guide
 
-1. Clone the repository:
+### Prerequisites
+- Python 3.8 or higher
+- macOS, Linux, or Windows
+- Internet connection
+- Alpaca account (free) - Sign up at https://alpaca.markets
+
+### Step 1: Clone the Repository
 ```bash
-git clone <repository-url>
-cd TradingAnalytics
+# Clone from GitHub
+git clone https://github.com/crajarshi/SP500-Options-Scanner.git
+
+# Navigate to the project directory
+cd SP500-Options-Scanner
 ```
 
-2. Install dependencies:
+### Step 2: Set Up Python Environment
 ```bash
+# Create a virtual environment (recommended)
+python3 -m venv venv
+
+# Activate the virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# Upgrade pip
+pip install --upgrade pip
+```
+
+### Step 3: Install Dependencies
+```bash
+# Install all required packages
 pip install -r requirements.txt
 ```
 
-3. Set up your API keys:
+### Step 4: Configure API Keys (Optional)
+The scanner comes with default Alpaca API keys for testing. For your own keys:
+
 ```bash
+# Copy the example environment file
 cp .env.example .env
-# Edit .env and add your API keys
+
+# Edit .env with your favorite editor
+nano .env  # or vim, code, etc.
+
+# Add your Alpaca API credentials:
+# ALPACA_API_KEY_ID=your_key_here
+# ALPACA_SECRET_KEY=your_secret_here
 ```
+
+### Step 5: Run the Scanner
+```bash
+# Run a single scan (recommended for first time)
+python sp500_options_scanner.py
+
+# The scanner will:
+# 1. Test Alpaca connection
+# 2. Fetch S&P 500 stock list
+# 3. Analyze each stock (~45 seconds)
+# 4. Display top 10 trading opportunities
+# 5. Save results to CSV
+```
+
+### Step 6: Understanding the Output
+
+**What happens when you run the scanner:**
+
+1. **Connection Test** - Verifies Alpaca API access
+2. **Fetches S&P 500 List** - Gets current list of ~500 stocks
+3. **Progress Bar** - Shows real-time progress:
+   ```
+   Scanning: 45%|████████████░░░░░░░| 225/503 [00:21<00:26, 10.52it/s]
+   ```
+4. **Analysis Complete** - Displays results dashboard:
+   ```
+   TOP OPTIONS TRADING SIGNALS (Last 3.5 hours analysis)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Rank  Ticker  Price    Chg%   Score  Signal
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   1     AAPL   $175.32  -2.1%   92.5  🟢 STRONG BUY
+   2     MSFT   $382.15  -1.8%   88.3  🟢 STRONG BUY
+   3     NVDA   $695.20  -3.2%   85.7  🟢 STRONG BUY
+   4     TSLA   $242.18  -2.5%   78.9  🟢 BUY
+   5     META   $485.62  -1.9%   75.2  🟢 BUY
+   ```
+5. **Summary Stats** - Shows signal counts:
+   ```
+   ✓ Scan complete. Found 489 stocks with valid data.
+   Strong Buy signals: 3 | Buy signals: 35
+   ```
+
+### Additional Running Options
+```bash
+# Run in demo mode (no API needed)
+python sp500_options_scanner.py --demo
+
+# Run continuously (auto-refresh every 30 min)
+python sp500_options_scanner.py --continuous
+
+# Combine options
+python sp500_options_scanner.py --demo --continuous
+```
+
+### 📁 Output Files
+- **CSV Results**: `output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv`
+- **Error Log**: `logs/error_log.txt`
+- **Scanner Log**: `logs/scanner.log`
+
+## 🔧 Troubleshooting
+
+### Common Issues and Solutions
+
+**1. "ModuleNotFoundError" when running the scanner**
+```bash
+# Make sure virtual environment is activated
+source venv/bin/activate  # macOS/Linux
+# or
+venv\Scripts\activate  # Windows
+
+# Reinstall dependencies
+pip install -r requirements.txt
+```
+
+**2. "403 Forbidden" or API errors**
+```bash
+# Check your API keys are correct
+# Run in demo mode to test without API
+python sp500_options_scanner.py --demo
+```
+
+**3. Scanner seems slow**
+- Normal scan time: 45-60 seconds for 500+ stocks
+- API rate limits require ~1 second between requests
+- Use cached data for faster subsequent runs
+
+**4. Missing stocks or "No data" errors**
+- Some tickers may have limited data (newly listed, low volume)
+- Special characters in tickers (like BRK.B) may need conversion
+- This is normal - scanner will skip and continue
 
 ## API Setup
 

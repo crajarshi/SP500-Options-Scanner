@@ -10,26 +10,29 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 ## Features
 
 - **Intraday Analysis**: Uses 15-minute candles for responsive signals
-- **Multiple Technical Indicators**:
-  - RSI (14-period): Momentum indicator
-  - Bollinger Bands (20-period): Volatility indicator
-  - MACD (12,26,9): Trend indicator
-  - OBV with 20-period SMA: Volume confirmation
+- **Market Regime Filter**: Checks SPY vs 50-day MA before scanning (bearish market protection)
+- **Enhanced Technical Indicators**:
+  - RSI (14-period): Momentum indicator - 30% weight
+  - MACD (12,26,9): Trend indicator - 30% weight
+  - Bollinger Bands (20-period): Volatility indicator - 20% weight
+  - OBV with 20-period SMA: Volume confirmation - 10% weight
+  - ATR (14-period): Volatility expansion/contraction - 10% weight
 - **Weighted Scoring System**: Combines indicators into a single score (0-100)
 - **Clear Trading Signals**: Generates actionable options trading recommendations
-- **Interactive Dashboard**: Rich console UI with real-time updates
-- **Smart Caching**: Reduces API calls and improves performance
+- **Interactive Dashboard**: Rich console UI with real-time updates and volatility trends
+- **Smart Caching**: Reduces API calls with aggressive daily data caching
+- **Quick Scan Mode**: Use cached data for rapid re-analysis
 - **Comprehensive Error Handling**: Continues processing despite individual stock errors
 
-## 🚀 Quick Start Guide
+## 🚀 Getting Started - Complete Setup Guide
 
-### Prerequisites
-- Python 3.8 or higher
-- macOS, Linux, or Windows
-- Internet connection
-- Alpaca account (free) - Sign up at https://alpaca.markets
+### What You Need Before Starting
+- **Python 3.8+** installed on your computer ([Download Python](https://www.python.org/downloads/))
+- **Terminal/Command Prompt** access
+- **Internet connection** for fetching market data
+- **5 minutes** for initial setup
 
-### Step 1: Clone the Repository
+### Step 1: Clone or Download the Repository
 ```bash
 # Clone from GitHub
 git clone https://github.com/crajarshi/SP500-Options-Scanner.git
@@ -80,11 +83,12 @@ nano .env  # or vim, code, etc.
 python sp500_options_scanner.py
 
 # The scanner will:
-# 1. Test Alpaca connection
-# 2. Fetch S&P 500 stock list
-# 3. Analyze each stock (~45 seconds)
-# 4. Display top 10 trading opportunities
-# 5. Save results to CSV
+# 1. Check market regime (SPY vs 50-day MA)
+# 2. Test Alpaca connection
+# 3. Fetch S&P 500 stock list
+# 4. Analyze each stock (~45 seconds)
+# 5. Display top 10 trading opportunities with ATR trends
+# 6. Save results to CSV
 ```
 
 ### Step 6: Understanding the Output
@@ -117,14 +121,21 @@ python sp500_options_scanner.py
 
 ### Additional Running Options
 ```bash
-# Run in demo mode (no API needed)
+# Run in demo mode (no API needed, skips market regime check)
 python sp500_options_scanner.py --demo
+
+# Run in quick mode (uses cached data for faster scans)
+python sp500_options_scanner.py --quick
 
 # Run continuously (auto-refresh every 30 min)
 python sp500_options_scanner.py --continuous
 
+# Use legacy Finnhub API instead of Alpaca
+python sp500_options_scanner.py --finnhub
+
 # Combine options
 python sp500_options_scanner.py --demo --continuous
+python sp500_options_scanner.py --quick --continuous
 ```
 
 ### 📁 Output Files
@@ -187,8 +198,16 @@ python sp500_options_scanner.py --finnhub
 ## Configuration
 
 Edit `config.py` to customize:
-- Technical indicator periods
-- Scoring weights and thresholds
+- Technical indicator periods (RSI, MACD, BB, OBV, ATR)
+- Scoring weights:
+  - `WEIGHT_RSI = 0.30` (30%)
+  - `WEIGHT_MACD = 0.30` (30%)
+  - `WEIGHT_BOLLINGER = 0.20` (20%)
+  - `WEIGHT_OBV = 0.10` (10%)
+  - `WEIGHT_ATR = 0.10` (10%)
+- Market regime parameters:
+  - `MARKET_REGIME_MA_PERIOD = 50` (50-day MA for SPY)
+  - `MIN_TRADING_DAYS_REQUIRED = 252` (1 year history)
 - Signal generation thresholds
 - API rate limits
 - Cache settings
@@ -230,9 +249,53 @@ python sp500_options_scanner.py --demo --continuous  # Demo + continuous
 - ❌ Historical candle data (paid only)
 - ❌ Technical analysis endpoints (paid only)
 
-## Understanding the Output
+## 🎯 Options Trading Enhancements
 
-### Dashboard Display
+### Market Regime Filter
+The scanner now checks if the overall market is bullish before scanning:
+
+```
+✅ Market Regime is BULLISH
+   SPY: $450.25 | 50-day MA: $445.30 (+1.1% above MA)
+   Proceeding with bullish scan...
+```
+
+If SPY is below its 50-day MA:
+```
+❌ Market Regime is BEARISH
+   SPY: $440.15 | 50-day MA: $445.30 (-1.2% below MA)
+   Halting bullish scan. Consider defensive strategies.
+```
+
+### ATR Volatility Component
+The scanner now includes Average True Range (ATR) analysis:
+- **10% weight** in the composite score
+- Shows volatility trend: ↑ Rising or ↓ Falling
+- Helps identify stocks with expanding volatility (better for options)
+
+## 📊 How to Read the Scanner Report
+
+### Console Output Structure
+
+#### 1. Market Regime Check (First Thing You See)
+```
+Checking market regime...
+✅ Market Regime is BULLISH
+   SPY: $450.25 | 50-day MA: $445.30 (+1.1% above MA)
+```
+- **Green checkmark (✅)**: Market is bullish, scan proceeds
+- **Red X (❌)**: Market is bearish, scan halts
+- Shows exact SPY price vs 50-day MA for context
+
+#### 2. Progress Bar
+```
+Scanning: 45%|████████████░░░░░░░| 225/503 [00:21<00:26, 10.52it/s]
+```
+- Shows real-time progress through S&P 500 stocks
+- Displays current ticker being processed
+- Estimates time remaining
+
+#### 3. Main Dashboard
 ```
 ╔═══════════════════════════════════════════════════════════════╗
 ║             S&P 500 Intraday Options Scanner                  ║
@@ -241,39 +304,90 @@ python sp500_options_scanner.py --demo --continuous  # Demo + continuous
 ╚═══════════════════════════════════════════════════════════════╝
 
 TOP OPTIONS TRADING SIGNALS (Last 3.5 hours analysis)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Rank  Ticker  Price    Chg%   Score  Signal              Indicators
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1     AAPL   $175.32  -2.1%   92.5  🟢 STRONG BUY       RSI:28 ✓ MACD:✓ BB:95 OBV:✓
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Rank  Ticker  Price    Chg%   Score  ATR    Vol  Signal           Indicators
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1     AAPL   $175.32  -2.1%   92.5  $3.45   ↑   🟢 STRONG BUY    RSI:28 MACD:✓ BB:95% OBV:✓ ATR:✓
+2     MSFT   $382.15  -1.8%   88.3  $5.20   ↑   🟢 STRONG BUY    RSI:32 MACD:✓ BB:88% OBV:✓ ATR:✓
+3     NVDA   $695.20  -3.2%   78.5  $12.30  ↓   🟢 BUY           RSI:38 MACD:✓ BB:75% OBV:✗ ATR:✗
 ```
 
-### Signal Types
+### Understanding Each Column
 
-1. **🟢 STRONG BUY (Score > 85)**: High conviction bullish signal
-   - Recommended: Sell Put or Buy Call options
-   - Multiple indicators strongly aligned
+| Column | Description | What to Look For |
+|--------|-------------|------------------|
+| **Rank** | Position by composite score | Lower numbers = stronger signals |
+| **Ticker** | Stock symbol | Click to research further |
+| **Price** | Current stock price | Dollar value |
+| **Chg%** | Price change % (from open) | Red = down, Green = up |
+| **Score** | Composite score (0-100) | >85 = Strong Buy, 70-85 = Buy |
+| **ATR** | Average True Range | Higher = more volatility |
+| **Vol** | Volatility trend | ↑ = expanding, ↓ = contracting |
+| **Signal** | Trading recommendation | 🟢 = Bullish, ⚪ = Neutral, 🔴 = Avoid |
+| **Indicators** | Individual indicator status | ✓ = positive, ✗ = negative |
 
-2. **🟢 BUY (Score 70-85)**: Solid bullish setup
-   - Recommended: Sell Put or Buy Call options
-   - Good risk/reward ratio
+### Signal Types and Options Strategies
 
-3. **⚪ HOLD (Score 30-70)**: Mixed signals
-   - No clear edge, wait for better setup
+#### 🟢 **STRONG BUY (Score > 85)**
+**What it means**: Multiple indicators are strongly bullish with expanding volatility
+**Options Strategies**:
+- **Buy Call Options**: High conviction directional play
+- **Sell Cash-Secured Puts**: Generate income with potential to own stock
+- **Bull Call Spread**: Lower cost alternative to buying calls
+**Best When**: ATR is rising (↑) indicating expanding volatility
 
-4. **🔴 AVOID (Score < 30)**: No bullish edge
-   - Skip for bullish strategies
+#### 🟢 **BUY (Score 70-85)**
+**What it means**: Solid bullish setup with good risk/reward
+**Options Strategies**:
+- **Sell Put Spreads**: Generate income with defined risk
+- **Buy Call Options**: Moderate conviction play
+- **Call Calendar Spreads**: If expecting gradual move up
+**Consider**: Check if ATR trend aligns with your strategy timeframe
 
-### Indicator Scoring
+#### ⚪ **HOLD (Score 30-70)**
+**What it means**: Mixed signals, no clear directional edge
+**Options Strategies**:
+- **Avoid new positions**: Wait for clearer signals
+- **Iron Condors**: If you expect range-bound movement
+- **Monitor only**: Add to watchlist for future opportunities
 
-- **RSI Score**: 100 for oversold (< 30), 0 for overbought (> 70)
-- **Bollinger Band Score**: Higher when price near lower band
-- **MACD Score**: 100 for bullish crossover, 0 otherwise
-- **OBV Score**: 100 when above 20-period SMA
+#### 🔴 **AVOID (Score < 30)**
+**What it means**: No bullish edge detected
+**Options Strategies**:
+- **Skip for bullish strategies**: Look elsewhere
+- **Consider bearish strategies**: Only if market regime permits
+- **Wait for reversal signals**: Monitor for potential bottoming
 
-### Weighted Final Score
+### Interpreting ATR for Options
+- **↑ Rising ATR**: Volatility expanding - options premiums increasing
+  - Good for: Buying options (calls/puts)
+  - Caution for: Selling options (higher risk)
+  
+- **↓ Falling ATR**: Volatility contracting - options premiums decreasing
+  - Good for: Selling options (premium collection)
+  - Caution for: Buying options (need larger moves)
+
+### Indicator Scoring Details
+
+- **RSI Score**: 100 for oversold (< 30), 0 for overbought (> 70), linear scale between
+- **MACD Score**: 100 for bullish crossover (MACD > Signal), 0 otherwise
+- **Bollinger Band Score**: Higher when price near lower band (100 at lower, 0 at upper)
+- **OBV Score**: 100 when OBV above 20-period SMA, 0 otherwise
+- **ATR Score**: 100 when ATR > 30-period SMA (expanding volatility), 0 otherwise
+
+### Weighted Final Score Calculation
 ```
-Score = (RSI × 30%) + (MACD × 30%) + (BB × 20%) + (OBV × 20%)
+Composite Score = (RSI × 30%) + (MACD × 30%) + (BB × 20%) + (OBV × 10%) + (ATR × 10%)
 ```
+
+### Quick Scan Mode
+For faster re-analysis using cached data:
+```bash
+python sp500_options_scanner.py --quick
+```
+- Uses data cached within last 24 hours
+- Ideal for testing different parameters
+- Completes in seconds instead of minutes
 
 ## Output Files
 
@@ -290,10 +404,24 @@ Score = (RSI × 30%) + (MACD × 30%) + (BB × 20%) + (OBV × 20%)
 
 ## Best Practices
 
+### For Options Trading
+1. **Market Regime**: Only trade bullish strategies when SPY > 50-day MA
+2. **Volatility Preference**: Focus on stocks with rising ATR (↑) for better options premiums
+3. **Score Threshold**: Consider only stocks with scores > 70 for higher probability
+4. **Time of Day**: Best signals often appear 30-60 minutes after market open
+
+### Operational Tips
 1. **Market Hours**: Run during market hours (9:30 AM - 4:00 PM ET) for best results
 2. **Refresh Frequency**: 30-60 minute intervals capture meaningful price movements
-3. **Signal Validation**: Combine with your own analysis and risk management
-4. **Position Sizing**: Never risk more than you can afford to lose
+3. **Quick Mode**: Use `--quick` for rapid re-scans when fine-tuning
+4. **Signal Validation**: Combine with your own analysis and risk management
+5. **Position Sizing**: Never risk more than you can afford to lose
+
+### Reading Priority
+1. **First**: Check market regime (bullish/bearish)
+2. **Second**: Look at top 3-5 stocks by score
+3. **Third**: Verify volatility trend (prefer ↑)
+4. **Fourth**: Check individual indicators for confirmation
 
 ## Troubleshooting
 
@@ -309,6 +437,21 @@ Enable detailed logging:
 # In sp500_options_scanner.py
 logging.basicConfig(level=logging.DEBUG)
 ```
+
+## 🆕 What's New - Options Trading Enhancements
+
+### Latest Updates (v2.0)
+1. **Market Regime Filter**: Automatically checks if SPY > 50-day MA before scanning
+2. **ATR Integration**: 10% weight for volatility expansion/contraction signals  
+3. **Enhanced Dashboard**: Shows ATR values and volatility trends (↑/↓)
+4. **Quick Scan Mode**: `--quick` flag for rapid re-analysis using cached data
+5. **Improved Weights**: Rebalanced for options trading (MACD/RSI 30%, BB 20%, OBV/ATR 10%)
+
+### Why These Changes Matter for Options Traders
+- **Market Regime**: Prevents taking bullish positions in bearish markets
+- **ATR Trends**: Identifies when volatility is expanding (better for buying options)
+- **Quick Mode**: Test different strategies without waiting for data fetches
+- **Better Scoring**: More emphasis on momentum (MACD/RSI) for short-term options
 
 ## Disclaimer
 

@@ -124,10 +124,12 @@ class OptionsScannnerDashboard:
         table.add_column("Price", style="white", width=10, justify="right")
         table.add_column("Chg%", width=8, justify="right")
         table.add_column("Score", style="bold", width=7, justify="center")
+        table.add_column("ATR", width=8, justify="right")
+        table.add_column("Vol", width=8, justify="center")
         table.add_column("Signal", width=25)
         
         if config.SHOW_DETAILED_INDICATORS:
-            table.add_column("Indicators", style="dim white", width=35)
+            table.add_column("Indicators", style="dim white", width=30)
         
         # Add rows
         for i, analysis in enumerate(analyses[:limit]):
@@ -148,6 +150,17 @@ class OptionsScannnerDashboard:
             # Signal with emoji
             signal = f"{analysis['signal']['emoji']} {analysis['signal']['text']}"
             
+            # ATR value and trend
+            atr_value = analysis['indicators'].get('atr_value', 0)
+            atr_trend = analysis['indicators'].get('atr_trend', 'Unknown')
+            atr_text = f"${atr_value:.2f}"
+            
+            # Volatility trend indicator
+            if atr_trend == 'Rising':
+                vol_trend = Text("↑", style="green")
+            else:
+                vol_trend = Text("↓", style="red")
+            
             # Color signal text based on type
             signal_colors = {
                 'STRONG_BUY': config.COLOR_STRONG_BUY,
@@ -158,24 +171,21 @@ class OptionsScannnerDashboard:
             signal_color = signal_colors.get(analysis['signal']['type'], 'white')
             
             row = [str(rank), ticker, price, change, score_text, 
+                   atr_text, vol_trend,
                    Text(signal, style=signal_color)]
             
             # Add indicators if enabled
             if config.SHOW_DETAILED_INDICATORS:
-                indicators_text = " ".join([
-                    self.format_indicator_status("RSI", 
-                        analysis['indicators']['rsi'],
-                        analysis['scores']['rsi_score'] > 50),
-                    self.format_indicator_status("MACD", 
-                        None,
-                        analysis['indicators']['macd_bullish']),
-                    self.format_indicator_status("BB", 
-                        analysis['scores']['bollinger_score'],
-                        analysis['scores']['bollinger_score'] > 50),
-                    self.format_indicator_status("OBV", 
-                        None,
-                        analysis['indicators']['obv_above_sma'])
-                ])
+                # Build detailed indicators text with ATR
+                rsi_val = analysis['indicators']['rsi']
+                indicators_parts = [
+                    f"RSI:{rsi_val:.0f}",
+                    f"MACD:{'✓' if analysis['indicators']['macd_bullish'] else '✗'}",
+                    f"BB:{analysis['indicators']['bb_position']:.0f}%",
+                    f"OBV:{'✓' if analysis['indicators']['obv_above_sma'] else '✗'}",
+                    f"ATR:{'✓' if analysis['scores'].get('atr_score', 0) > 50 else '✗'}"
+                ]
+                indicators_text = " ".join(indicators_parts)
                 row.append(indicators_text)
             
             table.add_row(*row)

@@ -36,6 +36,12 @@ MACD_FAST = 12  # 12 bars = 3 hours
 MACD_SLOW = 26  # 26 bars = 6.5 hours
 MACD_SIGNAL = 9  # 9 bars = 2.25 hours
 OBV_SMA_PERIOD = 20  # 20 bars = 5 hours
+ATR_PERIOD = 14  # 14 bars for ATR calculation
+ATR_SMA_PERIOD = 30  # 30 bars for ATR SMA
+
+# Market regime filter
+MARKET_REGIME_MA_PERIOD = 50  # 50-day moving average for SPY
+MIN_TRADING_DAYS_REQUIRED = 252  # Minimum days of history required
 
 # Scoring thresholds
 RSI_OVERSOLD = 30
@@ -45,7 +51,8 @@ RSI_OVERBOUGHT = 70
 WEIGHT_RSI = 0.30  # 30%
 WEIGHT_MACD = 0.30  # 30%
 WEIGHT_BOLLINGER = 0.20  # 20%
-WEIGHT_OBV = 0.20  # 20%
+WEIGHT_OBV = 0.10  # 10% (reduced from 20%)
+WEIGHT_ATR = 0.10  # 10% (new)
 
 # Signal thresholds
 SIGNAL_STRONG_BUY = 85
@@ -60,8 +67,9 @@ API_RETRY_DELAY = 5  # Seconds between retries
 
 # Cache settings
 CACHE_DIR = 'cache/intraday'
-CACHE_EXPIRY_MINUTES = 15  # Cache validity period
+CACHE_EXPIRY_MINUTES = 15  # Cache validity period for intraday data
 SP500_CACHE_EXPIRY_DAYS = 1  # S&P 500 list cache validity
+DAILY_CACHE_EXPIRY_HOURS = 24  # Daily data cache validity
 
 # Output settings
 OUTPUT_DIR = 'output/intraday_scans'

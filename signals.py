@@ -58,6 +58,17 @@ def calculate_obv_score(obv_above_sma: bool) -> float:
     return 100.0 if obv_above_sma else 0.0
 
 
+def calculate_atr_score(atr_above_sma: bool) -> float:
+    """
+    Calculate ATR score (0-100)
+    
+    Simple binary scoring:
+    - ATR > SMA: Score = 100 (expanding volatility)
+    - ATR <= SMA: Score = 0 (contracting volatility)
+    """
+    return 100.0 if atr_above_sma else 0.0
+
+
 def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
     """
     Calculate individual and composite scores from indicators
@@ -73,13 +84,15 @@ def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
     bollinger_score = calculate_bollinger_score(indicators['bollinger']['position'])
     macd_score = calculate_macd_score(indicators['macd']['bullish'])
     obv_score = calculate_obv_score(indicators['obv']['above_sma'])
+    atr_score = calculate_atr_score(indicators['atr']['above_sma'])
     
     # Calculate weighted composite score
     composite_score = (
         rsi_score * config.WEIGHT_RSI +
         macd_score * config.WEIGHT_MACD +
         bollinger_score * config.WEIGHT_BOLLINGER +
-        obv_score * config.WEIGHT_OBV
+        obv_score * config.WEIGHT_OBV +
+        atr_score * config.WEIGHT_ATR
     )
     
     return {
@@ -87,6 +100,7 @@ def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
         'macd_score': round(macd_score, config.DECIMAL_PLACES),
         'bollinger_score': round(bollinger_score, config.DECIMAL_PLACES),
         'obv_score': round(obv_score, config.DECIMAL_PLACES),
+        'atr_score': round(atr_score, config.DECIMAL_PLACES),
         'composite_score': round(composite_score, config.DECIMAL_PLACES)
     }
 
@@ -146,7 +160,9 @@ def analyze_stock(ticker: str, indicators: Dict) -> Optional[Dict]:
             'rsi': indicators['rsi']['value'],
             'macd_bullish': indicators['macd']['bullish'],
             'bb_position': indicators['bollinger']['position'],
-            'obv_above_sma': indicators['obv']['above_sma']
+            'obv_above_sma': indicators['obv']['above_sma'],
+            'atr_value': indicators['atr']['value'],
+            'atr_trend': indicators['atr']['trend']
         }
     }
     

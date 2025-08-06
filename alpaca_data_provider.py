@@ -164,6 +164,92 @@ class AlpacaDataProvider:
             logger.error(f"Error fetching quote for {symbol}: {e}")
             return None
     
+    def fetch_daily_bars(self, symbol: str, days_back: int = 252) -> Optional[pd.DataFrame]:
+        """
+        Fetch daily bars (OHLCV data) for a symbol
+        
+        Args:
+            symbol: Stock symbol
+            days_back: Number of days of historical data to fetch (default: 252 for 1 year)
+            
+        Returns:
+            DataFrame with OHLCV data or None if error
+        """
+        try:
+            # Calculate date range
+            end = datetime.now()
+            start = end - timedelta(days=days_back + 100)  # Add buffer for weekends/holidays
+            
+            # Format dates for API (RFC-3339 format)
+            start_str = start.strftime('%Y-%m-%dT00:00:00Z')
+            end_str = end.strftime('%Y-%m-%dT23:59:59Z')
+            
+            # Construct API endpoint
+            endpoint = f"{self.data_url}/v2/stocks/{symbol}/bars"
+            
+            # Parameters for daily bars
+            params = {
+                'start': start_str,
+                'end': end_str,
+                'timeframe': '1Day',  # Daily bars
+                'limit': 10000,  # Max allowed
+                'feed': 'iex',  # Use IEX feed
+                'adjustment': 'split'  # Adjust for splits
+            }
+            
+            # Make request
+            response = self.session.get(endpoint, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Check if we got bars
+            if 'bars' not in data or not data['bars']:
+                logger.warning(f"No daily bars returned for {symbol}")
+                return None
+            
+            # Convert to DataFrame
+            bars = data['bars']
+            df = pd.DataFrame(bars)
+            
+            # Rename columns to match our format
+            df = df.rename(columns={
+                't': 'timestamp',
+                'o': 'open',
+                'h': 'high',
+                'l': 'low',
+                'c': 'close',
+                'v': 'volume'
+            })
+            
+            # Convert timestamp to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Sort by timestamp
+            df = df.sort_values('timestamp')
+            
+            # Select only needed columns
+            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            
+            # Limit to requested days
+            if len(df) > days_back:
+                df = df.tail(days_back)
+            
+            logger.info(f"Fetched {len(df)} daily bars for {symbol}")
+            return df
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                logger.warning(f"Rate limit hit for {symbol}, waiting...")
+                time.sleep(30)  # Wait 30 seconds
+                return None
+            else:
+                logger.error(f"HTTP error fetching daily data for {symbol}: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching daily data for {symbol}: {e}")
+            return None
+    
     def test_connection(self) -> bool:
         """
         Test if Alpaca API connection is working

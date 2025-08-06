@@ -91,6 +91,34 @@ def calculate_macd(prices: pd.Series,
     return macd_line, signal_line, histogram
 
 
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, 
+                  period: int = 14) -> pd.Series:
+    """
+    Calculate Average True Range (ATR)
+    
+    Args:
+        high: Series of high prices
+        low: Series of low prices
+        close: Series of closing prices
+        period: ATR period (default: 14 bars)
+    
+    Returns:
+        ATR values as pandas Series
+    """
+    # Calculate True Range
+    high_low = high - low
+    high_close = np.abs(high - close.shift())
+    low_close = np.abs(low - close.shift())
+    
+    # True Range is the maximum of the three
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    
+    # Calculate ATR using RMA (Running Moving Average)
+    atr = tr.rolling(window=period).mean()
+    
+    return atr
+
+
 def calculate_obv(prices: pd.Series, volumes: pd.Series, 
                  sma_period: int = config.OBV_SMA_PERIOD) -> Tuple[pd.Series, pd.Series]:
     """
@@ -136,6 +164,8 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     
     # Extract price and volume data
     close_prices = df['close']
+    high_prices = df['high']
+    low_prices = df['low']
     volumes = df['volume']
     
     # Calculate indicators
@@ -144,12 +174,16 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     macd_line, signal_line, histogram = calculate_macd(close_prices)
     obv, obv_sma = calculate_obv(close_prices, volumes)
     
+    # Calculate ATR and its SMA
+    atr = calculate_atr(high_prices, low_prices, close_prices, period=config.ATR_PERIOD)
+    atr_sma = atr.rolling(window=config.ATR_SMA_PERIOD).mean()
+    
     # Get latest values (most recent bar)
     latest_idx = -1
     current_price = close_prices.iloc[latest_idx]
     
     # Handle NaN values by checking if indicators are calculated
-    if pd.isna(rsi.iloc[latest_idx]):
+    if pd.isna(rsi.iloc[latest_idx]) or pd.isna(atr.iloc[latest_idx]) or pd.isna(atr_sma.iloc[latest_idx]):
         return None
     
     indicators = {
@@ -176,6 +210,12 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
             'current': obv.iloc[latest_idx],
             'sma': obv_sma.iloc[latest_idx],
             'above_sma': obv.iloc[latest_idx] > obv_sma.iloc[latest_idx]
+        },
+        'atr': {
+            'value': atr.iloc[latest_idx],
+            'sma': atr_sma.iloc[latest_idx],
+            'above_sma': atr.iloc[latest_idx] > atr_sma.iloc[latest_idx],
+            'trend': 'Rising' if atr.iloc[latest_idx] > atr_sma.iloc[latest_idx] else 'Falling'
         }
     }
     

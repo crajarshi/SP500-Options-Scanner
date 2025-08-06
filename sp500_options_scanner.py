@@ -38,13 +38,14 @@ logger = logging.getLogger(__name__)
 class SP500OptionsScanner:
     """Main scanner class"""
     
-    def __init__(self, demo_mode=False, use_alpaca=True):
+    def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False):
         self.dashboard = OptionsScannnerDashboard()
         self.session = requests.Session()
         self.errors = []
         self.running = True
         self.demo_mode = demo_mode
         self.use_alpaca = use_alpaca
+        self.quick_mode = quick_mode
         
         # Initialize data provider
         if self.use_alpaca and not self.demo_mode:
@@ -59,6 +60,8 @@ class SP500OptionsScanner:
         
         if self.demo_mode:
             logger.info("Running in DEMO MODE - using simulated data")
+        if self.quick_mode:
+            logger.info("Running in QUICK MODE - using cached data when available")
         
     def signal_handler(self, signum, frame):
         """Handle Ctrl+C gracefully"""
@@ -155,10 +158,16 @@ class SP500OptionsScanner:
             
         # Check cache first
         cache_identifier = f"{ticker}_{datetime.now().strftime('%Y%m%d_%H')}"
+        
+        # In quick mode, use cache even if slightly stale
+        cache_max_age = config.CACHE_EXPIRY_MINUTES
+        if self.quick_mode:
+            cache_max_age = config.DAILY_CACHE_EXPIRY_HOURS * 60  # Use daily cache in quick mode
+        
         cached_data = self.load_cache(
             'intraday_data', 
             cache_identifier,
-            max_age_minutes=config.CACHE_EXPIRY_MINUTES
+            max_age_minutes=cache_max_age
         )
         if cached_data is not None:
             return cached_data
@@ -279,9 +288,12 @@ class SP500OptionsScanner:
                 'macd_score': analysis['scores']['macd_score'],
                 'bollinger_score': analysis['scores']['bollinger_score'],
                 'obv_score': analysis['scores']['obv_score'],
+                'atr_score': analysis['scores'].get('atr_score', 0),
                 'signal': analysis['signal']['text'],
                 'rsi_value': analysis['indicators']['rsi'],
                 'macd_bullish': analysis['indicators']['macd_bullish'],
+                'atr_value': analysis['indicators'].get('atr_value', 0),
+                'atr_trend': analysis['indicators'].get('atr_trend', 'Unknown'),
                 'scan_time': scan_time
             })
         
@@ -292,6 +304,80 @@ class SP500OptionsScanner:
         filepath = os.path.join(config.OUTPUT_DIR, filename)
         df.to_csv(filepath, index=False)
         logger.info(f"Results saved to {filepath}")
+    
+    def check_market_regime(self) -> bool:
+        """
+        Check if the market is in a bullish regime (SPY > 50-day MA)
+        
+        Returns:
+            True if bullish (continue scan), False if bearish (halt scan)
+        """
+        try:
+            self.dashboard.console.print("\n[yellow]Checking market regime...[/yellow]")
+            
+            # Try to get cached SPY data first
+            cache_key = f"spy_daily_{datetime.now().strftime('%Y%m%d')}"
+            spy_data = self.load_cache('market_regime', cache_key, 
+                                     max_age_minutes=config.DAILY_CACHE_EXPIRY_HOURS * 60)
+            
+            if spy_data is None:
+                # Fetch fresh SPY data
+                if self.use_alpaca and self.data_provider:
+                    spy_data = self.data_provider.fetch_daily_bars(
+                        'SPY', 
+                        days_back=config.MARKET_REGIME_MA_PERIOD + 10  # Extra days for MA calculation
+                    )
+                    if spy_data is not None:
+                        self.save_cache(spy_data, 'market_regime', cache_key)
+                else:
+                    # Fallback to demo mode or skip
+                    self.dashboard.console.print(
+                        "[yellow]⚠ Unable to fetch SPY data. Proceeding without market regime check.[/yellow]"
+                    )
+                    return True
+            
+            if spy_data is None or len(spy_data) < config.MARKET_REGIME_MA_PERIOD:
+                self.dashboard.console.print(
+                    "[yellow]⚠ Insufficient SPY data for market regime check. Proceeding anyway.[/yellow]"
+                )
+                return True
+            
+            # Calculate 50-day moving average
+            spy_data['ma50'] = spy_data['close'].rolling(window=config.MARKET_REGIME_MA_PERIOD).mean()
+            
+            # Get current SPY price and 50-day MA
+            current_price = spy_data['close'].iloc[-1]
+            ma50 = spy_data['ma50'].iloc[-1]
+            
+            # Check regime
+            is_bullish = current_price > ma50
+            
+            # Display result
+            if is_bullish:
+                percentage_above = ((current_price - ma50) / ma50) * 100
+                self.dashboard.console.print(
+                    f"[green]✅ Market Regime is BULLISH[/green]\n"
+                    f"   SPY: ${current_price:.2f} | 50-day MA: ${ma50:.2f} "
+                    f"(+{percentage_above:.1f}% above MA)\n"
+                    f"   [green]Proceeding with bullish scan...[/green]"
+                )
+                return True
+            else:
+                percentage_below = ((ma50 - current_price) / ma50) * 100
+                self.dashboard.console.print(
+                    f"[red]❌ Market Regime is BEARISH[/red]\n"
+                    f"   SPY: ${current_price:.2f} | 50-day MA: ${ma50:.2f} "
+                    f"(-{percentage_below:.1f}% below MA)\n"
+                    f"   [red]Halting bullish scan. Consider defensive strategies.[/red]"
+                )
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Error checking market regime: {e}")
+            self.dashboard.console.print(
+                "[yellow]⚠ Could not determine market regime. Proceeding with scan.[/yellow]"
+            )
+            return True
     
     def save_error_log(self):
         """Save error log"""
@@ -308,6 +394,12 @@ class SP500OptionsScanner:
         """Run a complete scan of all S&P 500 stocks"""
         scan_time = datetime.now()
         self.errors = []
+        
+        # Check market regime first
+        if not self.demo_mode:  # Skip market check in demo mode
+            if not self.check_market_regime():
+                # Market is bearish, halt scan
+                return []
         
         # Get S&P 500 tickers
         self.dashboard.display_success("Fetching S&P 500 constituents...")
@@ -419,11 +511,13 @@ def main():
     demo_mode = '--demo' in sys.argv
     continuous_mode = '--continuous' in sys.argv
     use_finnhub = '--finnhub' in sys.argv  # Option to use legacy Finnhub
+    quick_mode = '--quick' in sys.argv  # Quick mode using cached data
     
     # Create scanner
     scanner = SP500OptionsScanner(
         demo_mode=demo_mode,
-        use_alpaca=not use_finnhub  # Use Alpaca by default
+        use_alpaca=not use_finnhub,  # Use Alpaca by default
+        quick_mode=quick_mode
     )
     
     if continuous_mode:

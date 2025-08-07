@@ -10,15 +10,21 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 ## Features
 
 - **Intraday Analysis**: Uses 15-minute candles for responsive signals
-- **Market Regime Filter**: Checks SPY vs 50-day MA before scanning (bearish market protection)
+- **Adaptive Dual-Mode Scanner**: Automatically detects market conditions and adjusts strategy
+  - Bullish Mode: Identifies SELL PUT / BUY CALL opportunities
+  - Bearish Mode: Identifies BUY PUT / SELL CALL opportunities
+  - Mixed Mode: Shows trend-confirmed setups only
+- **Custom Watchlist Support**: Scan your personal stock lists instead of full S&P 500
+- **Market Regime Filter**: Analyzes SPY trend, VIX level, and market breadth
 - **Enhanced Technical Indicators**:
-  - RSI (14-period): Momentum indicator - 30% weight
-  - MACD (12,26,9): Trend indicator - 30% weight
+  - RSI (14-period): Momentum indicator - 25% weight
+  - MACD (12,26,9): Trend indicator - 25% weight
   - Bollinger Bands (20-period): Volatility indicator - 20% weight
   - OBV with 20-period SMA: Volume confirmation - 10% weight
+  - Volume: Relative volume analysis - 10% weight
   - ATR (14-period): Volatility expansion/contraction - 10% weight
 - **Weighted Scoring System**: Combines indicators into a single score (0-100)
-- **Clear Trading Signals**: Generates actionable options trading recommendations
+- **Clear Trading Signals**: Generates specific options trading recommendations
 - **Interactive Dashboard**: Rich console UI with real-time updates and volatility trends
 - **Smart Caching**: Reduces API calls with aggressive daily data caching
 - **Quick Scan Mode**: Use cached data for rapid re-analysis
@@ -232,6 +238,47 @@ Run with automatic refresh every 30 minutes:
 ```bash
 python sp500_options_scanner.py --continuous
 python sp500_options_scanner.py --demo --continuous  # Demo + continuous
+```
+
+### Watchlist Mode (Custom Stock Lists)
+Scan your personal watchlist instead of all S&P 500 stocks:
+```bash
+# Scan stocks from watchlists/ folder
+python sp500_options_scanner.py --watchlist tech.txt
+python sp500_options_scanner.py --watchlist energy.txt
+
+# Skip market regime check for faster results
+python sp500_options_scanner.py --watchlist my_stocks.txt --no-regime
+
+# Combine with other options
+python sp500_options_scanner.py --watchlist tech.txt --mode bearish --top 10
+```
+
+Create your watchlist file in `watchlists/` folder:
+```
+# watchlists/tech.txt
+AAPL
+MSFT
+NVDA
+# Add comments with #
+AMD
+GOOGL
+```
+
+### Scanner Modes (Adaptive/Bullish/Bearish)
+The scanner can operate in different modes based on market conditions:
+```bash
+# Adaptive mode (default) - auto-detects market conditions
+python sp500_options_scanner.py
+
+# Force bullish mode - find SELL PUT / BUY CALL opportunities
+python sp500_options_scanner.py --mode bullish
+
+# Force bearish mode - find BUY PUT / SELL CALL opportunities  
+python sp500_options_scanner.py --mode bearish
+
+# Mixed mode - show both bullish and bearish opportunities
+python sp500_options_scanner.py --mode mixed
 ```
 
 ### Data Provider Comparison

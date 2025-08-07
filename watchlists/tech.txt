@@ -1,0 +1,19 @@
+# Major tech companies
+AAPL
+MSFT
+GOOGL
+META
+AMZN
+
+# Semiconductors
+NVDA
+AMD
+INTC
+AVGO
+QCOM
+
+# Software & Cloud
+CRM
+ADBE
+NOW
+ORCL

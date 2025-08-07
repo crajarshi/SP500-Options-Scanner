@@ -39,7 +39,8 @@ logger = logging.getLogger(__name__)
 class SP500OptionsScanner:
     """Main scanner class"""
     
-    def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False):
+    def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False, scanner_mode='adaptive', 
+                 watchlist_file=None, skip_regime=False):
         self.dashboard = OptionsScannnerDashboard()
         self.session = requests.Session()
         self.errors = []
@@ -47,6 +48,12 @@ class SP500OptionsScanner:
         self.demo_mode = demo_mode
         self.use_alpaca = use_alpaca
         self.quick_mode = quick_mode
+        self.scanner_mode = scanner_mode
+        self.market_regime = None
+        self.effective_mode = None
+        self.watchlist_file = watchlist_file
+        self.skip_regime = skip_regime
+        self.invalid_tickers = []  # Track invalid tickers from watchlist
         
         # Initialize data provider
         if self.use_alpaca and not self.demo_mode:
@@ -108,6 +115,28 @@ class SP500OptionsScanner:
         except Exception as e:
             logger.warning(f"Cache save error: {e}")
     
+    def determine_effective_mode(self) -> str:
+        """Determine the effective scanning mode based on market conditions"""
+        if self.scanner_mode != 'adaptive':
+            return self.scanner_mode
+        
+        # Use market regime to determine mode
+        if not self.market_regime:
+            return 'bullish'  # Safe default
+        
+        breadth = self.market_regime.get('breadth_pct', 50)
+        vix = self.market_regime.get('vix_level', 20)
+        
+        if breadth < config.BEARISH_BREADTH_THRESHOLD or vix > config.BEARISH_VIX_THRESHOLD:
+            logger.info("📉 Market regime is BEARISH - scanning for bearish setups")
+            return 'bearish'
+        elif breadth > config.BULLISH_BREADTH_THRESHOLD and vix < config.BULLISH_VIX_THRESHOLD:
+            logger.info("📈 Market regime is BULLISH - scanning for bullish setups")
+            return 'bullish'
+        else:
+            logger.info("🔄 Market regime is MIXED - showing trend-confirmed setups")
+            return 'mixed'
+    
     def fetch_sp500_tickers(self) -> List[str]:
         """Fetch S&P 500 constituents"""
         if self.demo_mode:
@@ -149,6 +178,65 @@ class SP500OptionsScanner:
         # Fallback to demo tickers
         logger.warning("Using demo ticker list")
         return get_demo_sp500_tickers()
+    
+    def fetch_watchlist_tickers(self, filename: str) -> List[str]:
+        """Fetch tickers from a watchlist file"""
+        import os
+        
+        # Check if it's a full path or just a filename
+        if os.path.isabs(filename):
+            filepath = filename
+        else:
+            # Look in the watchlists directory
+            filepath = os.path.join(config.WATCHLIST_DIR, filename)
+        
+        # Check if file exists
+        if not os.path.exists(filepath):
+            logger.error(f"Watchlist file not found: {filepath}")
+            self.dashboard.display_error(f"Watchlist file not found: {filepath}")
+            sys.exit(1)
+        
+        tickers = []
+        self.invalid_tickers = []
+        
+        try:
+            with open(filepath, 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    # Strip whitespace
+                    line = line.strip()
+                    
+                    # Skip empty lines and comments
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Extract ticker (handle potential inline comments)
+                    ticker = line.split('#')[0].strip().upper()
+                    
+                    if ticker:
+                        # Basic validation - ticker should be alphanumeric with possible dots/dashes
+                        if ticker.replace('-', '').replace('.', '').isalnum():
+                            # Convert dots to dashes for consistency
+                            ticker = ticker.replace('.', '-')
+                            tickers.append(ticker)
+                        else:
+                            logger.warning(f"Invalid ticker format on line {line_num}: {ticker}")
+                            self.invalid_tickers.append(ticker)
+            
+            if not tickers:
+                logger.error(f"No valid tickers found in watchlist: {filepath}")
+                self.dashboard.display_error(f"Watchlist file is empty or contains no valid tickers: {filepath}")
+                sys.exit(1)
+            
+            logger.info(f"Loaded {len(tickers)} tickers from watchlist: {filename}")
+            if self.invalid_tickers:
+                logger.warning(f"Skipped {len(self.invalid_tickers)} invalid tickers: {', '.join(self.invalid_tickers)}")
+            
+            return tickers
+            
+        except Exception as e:
+            logger.error(f"Error reading watchlist file: {e}")
+            self.dashboard.display_error(f"Error reading watchlist file: {e}")
+            sys.exit(1)
     
     def fetch_intraday_data(self, ticker: str) -> Optional[pd.DataFrame]:
         """Fetch intraday candle data for a ticker"""
@@ -259,8 +347,13 @@ class SP500OptionsScanner:
                 })
                 return None
             
-            # Analyze and generate signals
-            analysis = analyze_stock(ticker, indicators)
+            # Analyze with mode awareness
+            analysis = analyze_stock(
+                ticker, 
+                indicators, 
+                mode=self.effective_mode if self.effective_mode else 'adaptive',
+                market_regime=self.market_regime
+            )
             return analysis
             
         except Exception as e:
@@ -272,7 +365,7 @@ class SP500OptionsScanner:
             logger.error(f"Error processing {ticker}: {e}")
             return None
     
-    def save_results(self, analyses: List[Dict], scan_time: datetime):
+    def save_results(self, analyses: List[Dict], scan_time: datetime, scan_type='sp500'):
         """Save scan results to CSV"""
         if not analyses:
             return
@@ -300,9 +393,18 @@ class SP500OptionsScanner:
         
         df = pd.DataFrame(results_data)
         
-        # Save to CSV
-        filename = f"sp500_scan_{scan_time.strftime('%Y-%m-%d_%H%M')}.csv"
-        filepath = os.path.join(config.OUTPUT_DIR, filename)
+        # Save to CSV with appropriate naming
+        if scan_type == 'watchlist' and self.watchlist_file:
+            # Extract watchlist name without extension
+            import os
+            watchlist_name = os.path.splitext(os.path.basename(self.watchlist_file))[0]
+            filename = f"{watchlist_name}_scan_{scan_time.strftime('%Y-%m-%d_%H%M')}.csv"
+            output_dir = config.WATCHLIST_OUTPUT_DIR
+        else:
+            filename = f"sp500_scan_{scan_time.strftime('%Y-%m-%d_%H%M')}.csv"
+            output_dir = config.OUTPUT_DIR
+        
+        filepath = os.path.join(output_dir, filename)
         df.to_csv(filepath, index=False)
         logger.info(f"Results saved to {filepath}")
     
@@ -522,6 +624,14 @@ class SP500OptionsScanner:
                     f"[green]✅ MARKET REGIME: BULLISH ({factors_passed}/{total_factors} factors positive)[/green]\n"
                     f"[green]Market conditions favorable for bullish strategies.[/green]"
                 )
+                # Store regime data when bullish
+                breadth_pct_val = breadth_pct if not skip_breadth else 60
+                self.market_regime = {
+                    'breadth_pct': breadth_pct_val,
+                    'vix_level': vix_level,
+                    'spy_above_ma': spy_bullish,
+                    'is_bullish': True
+                }
                 return True
             else:
                 self.dashboard.console.print(
@@ -532,6 +642,15 @@ class SP500OptionsScanner:
                     self.dashboard.console.print("[yellow]🛡️ Consider defensive strategies (puts, hedges)[/yellow]")
                 else:
                     self.dashboard.console.print("[yellow]💡 Tip: Reduce position sizes or consider defensive strategies[/yellow]")
+                
+                # Store regime data even if not bullish
+                breadth_pct_val = breadth_pct if not skip_breadth else 50
+                self.market_regime = {
+                    'breadth_pct': breadth_pct_val,
+                    'vix_level': vix_level,
+                    'spy_above_ma': spy_bullish,
+                    'is_bullish': False
+                }
                 return False
                 
         except Exception as e:
@@ -539,6 +658,13 @@ class SP500OptionsScanner:
             self.dashboard.console.print(
                 "[yellow]⚠ Could not determine market regime. Proceeding with scan.[/yellow]"
             )
+            # Set default regime data
+            self.market_regime = {
+                'breadth_pct': 50,
+                'vix_level': 20,
+                'spy_above_ma': True,
+                'is_bullish': True
+            }
             return True
     
     def save_error_log(self):
@@ -553,24 +679,43 @@ class SP500OptionsScanner:
                 f.write(f"{error['timestamp']}: {error['ticker']} - {error['error']}\n")
     
     def run_scan(self, skip_breadth=False, top_count=None, filter_signals=None, auto_export=False) -> List[Dict]:
-        """Run a complete scan of all S&P 500 stocks"""
+        """Run a complete scan of stocks (S&P 500 or watchlist)"""
         scan_time = datetime.now()
         self.errors = []
-        self.market_regime_bullish = True  # Track regime status
         
-        # Check market regime first (but don't halt scan)
-        if not self.demo_mode:  # Skip market check in demo mode
-            self.market_regime_bullish = self.check_market_regime(skip_breadth=skip_breadth)
-            if not self.market_regime_bullish:
-                # Market is not bullish, but continue with warning
-                self.dashboard.console.print(
-                    "\n[yellow]⚠️  WARNING: Market regime is NOT bullish. "
-                    "Proceeding with scan but exercise caution with bullish strategies.[/yellow]\n"
-                )
+        # Check market regime first (unless skipped)
+        if not self.skip_regime:
+            if not self.demo_mode:
+                self.market_regime_bullish = self.check_market_regime(skip_breadth=skip_breadth)
+            else:
+                self.market_regime = {'breadth_pct': 50, 'vix_level': 20, 'spy_above_ma': True, 'is_bullish': True}
+                self.market_regime_bullish = True
+        else:
+            # Skip regime check - assume neutral
+            self.market_regime = {'breadth_pct': 50, 'vix_level': 20, 'spy_above_ma': True, 'is_bullish': True}
+            self.market_regime_bullish = True
+            logger.info("Skipping market regime check as requested")
         
-        # Get S&P 500 tickers
-        self.dashboard.display_success("Fetching S&P 500 constituents...")
-        tickers = self.fetch_sp500_tickers()
+        # Determine effective mode
+        self.effective_mode = self.determine_effective_mode()
+        
+        # Display mode information
+        mode_display = {
+            'bullish': '[green]📈 BULLISH MODE[/green] - Scanning for call/put-sell opportunities',
+            'bearish': '[red]📉 BEARISH MODE[/red] - Scanning for put/call-sell opportunities',
+            'mixed': '[yellow]🔄 MIXED MODE[/yellow] - Showing trend-confirmed opportunities'
+        }
+        self.dashboard.console.print(f"\n{mode_display.get(self.effective_mode, 'ADAPTIVE MODE')}\n")
+        
+        # Get tickers (watchlist or S&P 500)
+        if self.watchlist_file:
+            self.dashboard.display_success(f"Loading watchlist: {self.watchlist_file}...")
+            tickers = self.fetch_watchlist_tickers(self.watchlist_file)
+            scan_type = 'watchlist'
+        else:
+            self.dashboard.display_success("Fetching S&P 500 constituents...")
+            tickers = self.fetch_sp500_tickers()
+            scan_type = 'sp500'
         
         # Process stocks with progress bar
         analyses = []
@@ -594,7 +739,7 @@ class SP500OptionsScanner:
         ranked_analyses = rank_stocks(analyses)
         
         # Save results
-        self.save_results(ranked_analyses, scan_time)
+        self.save_results(ranked_analyses, scan_time, scan_type)
         self.save_error_log()
         
         # Filter results if specified
@@ -610,13 +755,27 @@ class SP500OptionsScanner:
         if auto_export:
             self.export_to_csv(display_analyses, scan_time)
         
-        # Display results with market regime status
+        # Display results with market regime status and watchlist info
         self.dashboard.display_results(
             display_analyses, 
             scan_time, 
             self.errors,
-            market_regime_bullish=getattr(self, 'market_regime_bullish', True)
+            market_regime_bullish=getattr(self, 'market_regime_bullish', True),
+            mode=self.effective_mode,
+            scan_type=scan_type,
+            watchlist_file=self.watchlist_file
         )
+        
+        # Display summary for watchlist including invalid tickers
+        if self.watchlist_file:
+            self.dashboard.console.print(f"\n✓ Scanned {len(analyses)} of {len(tickers)} tickers successfully")
+            if self.invalid_tickers:
+                self.dashboard.console.print(f"[yellow]⚠ Invalid tickers skipped: {', '.join(self.invalid_tickers)}[/yellow]")
+            
+            # Show tickers that had errors during processing
+            failed_tickers = [e['ticker'] for e in self.errors if e['ticker'] not in self.invalid_tickers]
+            if failed_tickers:
+                self.dashboard.console.print(f"[yellow]⚠ Failed to process: {', '.join(set(failed_tickers))}[/yellow]")
         
         return ranked_analyses
     
@@ -750,6 +909,24 @@ Examples:
                        help='Filter by signal types (comma-separated: STRONG_BUY,BUY,HOLD,AVOID)')
     parser.add_argument('--export', action='store_true', help='Auto-export results to CSV')
     
+    # Mode selection arguments
+    parser.add_argument('--mode', 
+                       choices=['adaptive', 'bullish', 'bearish', 'mixed'],
+                       default='adaptive',
+                       help='Scanner mode (default: adaptive)')
+    parser.add_argument('--bearish', 
+                       action='store_true',
+                       help='Shortcut for --mode bearish')
+    
+    # Watchlist arguments
+    parser.add_argument('--watchlist', 
+                       type=str,
+                       metavar='FILE',
+                       help='Use custom watchlist file instead of S&P 500')
+    parser.add_argument('--no-regime',
+                       action='store_true',
+                       help='Skip market regime check for faster results')
+    
     return parser.parse_args()
 
 def main():
@@ -765,11 +942,19 @@ def main():
         if filter_signals:
             logger.info(f"Filtering for signals: {', '.join(filter_signals)}")
     
+    # Determine scanner mode
+    scanner_mode = args.mode
+    if args.bearish:
+        scanner_mode = 'bearish'
+    
     # Create scanner
     scanner = SP500OptionsScanner(
         demo_mode=args.demo,
         use_alpaca=not args.finnhub,  # Use Alpaca by default
-        quick_mode=args.quick
+        quick_mode=args.quick,
+        scanner_mode=scanner_mode,
+        watchlist_file=args.watchlist,
+        skip_regime=args.no_regime
     )
     
     # Handle special modes

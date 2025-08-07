@@ -149,6 +149,77 @@ def calculate_obv(prices: pd.Series, volumes: pd.Series,
     return obv, obv_sma
 
 
+def calculate_stock_trend(df: pd.DataFrame) -> Dict[str, any]:
+    """
+    Calculate individual stock trend using strict dual confirmation
+    Both EMA20 and SMA50 must align for trend confirmation
+    
+    Args:
+        df: DataFrame with OHLCV data
+    
+    Returns:
+        Dictionary with trend direction and strength
+    """
+    if len(df) < 50:
+        return {'direction': 'neutral', 'strength': 0, 'ema20': None, 'sma50': None}
+    
+    close_prices = df['close']
+    
+    # Short-term: 20-period EMA
+    ema20 = close_prices.ewm(span=20, adjust=False).mean()
+    
+    # Medium-term: 50-period SMA
+    sma50 = close_prices.rolling(window=50).mean()
+    
+    current_price = close_prices.iloc[-1]
+    ema20_value = ema20.iloc[-1]
+    sma50_value = sma50.iloc[-1]
+    
+    # Check if we have valid moving averages
+    if pd.isna(sma50_value):
+        return {'direction': 'neutral', 'strength': 0, 'ema20': ema20_value, 'sma50': None}
+    
+    # Calculate distances from moving averages
+    ema20_distance = ((current_price - ema20_value) / ema20_value) * 100
+    sma50_distance = ((current_price - sma50_value) / sma50_value) * 100
+    
+    # Both must be true for bullish confirmation
+    above_ema20 = current_price > ema20_value
+    above_sma50 = current_price > sma50_value
+    
+    # Calculate trend strength (average of distances)
+    avg_distance = (abs(ema20_distance) + abs(sma50_distance)) / 2
+    
+    # Strict trend confirmation - BOTH must align
+    if above_ema20 and above_sma50 and ema20_distance > 0.5 and sma50_distance > 0:
+        return {
+            'direction': 'bullish',
+            'strength': avg_distance,
+            'ema20': ema20_value,
+            'sma50': sma50_value,
+            'ema20_distance': ema20_distance,
+            'sma50_distance': sma50_distance
+        }
+    elif not above_ema20 and not above_sma50 and ema20_distance < -0.5 and sma50_distance < 0:
+        return {
+            'direction': 'bearish',
+            'strength': avg_distance,
+            'ema20': ema20_value,
+            'sma50': sma50_value,
+            'ema20_distance': ema20_distance,
+            'sma50_distance': sma50_distance
+        }
+    else:
+        return {
+            'direction': 'neutral',
+            'strength': 0,
+            'ema20': ema20_value,
+            'sma50': sma50_value,
+            'ema20_distance': ema20_distance,
+            'sma50_distance': sma50_distance
+        }
+
+
 def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     """
     Calculate all technical indicators for a stock
@@ -182,6 +253,9 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     avg_volume = volumes.rolling(window=20).mean()  # 20-period average volume
     current_volume = volumes.iloc[-1]
     relative_volume = current_volume / avg_volume.iloc[-1] if avg_volume.iloc[-1] > 0 else 1.0
+    
+    # Calculate stock trend
+    trend = calculate_stock_trend(df)
     
     # Get latest values (most recent bar)
     latest_idx = -1
@@ -227,7 +301,8 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
             'average': avg_volume.iloc[latest_idx],
             'relative': relative_volume,
             'above_average': relative_volume > 1.0
-        }
+        },
+        'trend': trend
     }
     
     # Add price change information

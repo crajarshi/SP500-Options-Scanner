@@ -83,8 +83,9 @@ class OptionsScannnerDashboard:
         elif indicator == "OBV":
             return f"OBV:{'✓' if positive else '✗'}"
     
-    def create_header(self, scan_time: datetime, next_scan: datetime, market_regime_bullish: bool = True) -> Panel:
-        """Create dashboard header"""
+    def create_header(self, scan_time: datetime, next_scan: datetime, market_regime_bullish: bool = True,
+                     scan_type: str = 'sp500', watchlist_file: str = None) -> Panel:
+        """Create dashboard header with watchlist support"""
         market_status, current_time = self.get_market_status()
         status_color = "green" if market_status == "OPEN" else "yellow"
         
@@ -98,8 +99,16 @@ class OptionsScannnerDashboard:
         if not market_regime_bullish:
             regime_text = "\n[yellow]⚠️  MARKET REGIME: NOT BULLISH - Exercise Caution[/yellow]"
         
+        # Determine title based on scan type
+        if scan_type == 'watchlist' and watchlist_file:
+            import os
+            watchlist_name = os.path.basename(watchlist_file)
+            title = f"[bold white]WATCHLIST SCAN - {watchlist_name}[/bold white]"
+        else:
+            title = "[bold white]S&P 500 Intraday Options Scanner[/bold white]"
+        
         header_text = (
-            f"[bold white]S&P 500 Intraday Options Scanner[/bold white]\n\n"
+            f"{title}\n\n"
             f"Market Status: [{status_color}]{market_status}[/{status_color}]    "
             f"Time: {current_time}    "
             f"Next Scan: {minutes_until:02d}:{seconds_until:02d}"
@@ -156,13 +165,22 @@ class OptionsScannnerDashboard:
             padding=(1, 2)
         )
     
-    def create_results_table(self, analyses: List[Dict], limit: int = None) -> Table:
-        """Create results table"""
+    def create_results_table(self, analyses: List[Dict], limit: int = None, 
+                           scan_type: str = 'sp500', watchlist_file: str = None) -> Table:
+        """Create results table with watchlist support"""
         if limit is None:
             limit = config.TOP_STOCKS_DISPLAY
         
+        # Determine table title
+        if scan_type == 'watchlist' and watchlist_file:
+            import os
+            watchlist_name = os.path.splitext(os.path.basename(watchlist_file))[0]
+            title = f"TOP OPPORTUNITIES FROM WATCHLIST ({watchlist_name}.txt)"
+        else:
+            title = f"TOP {limit} OPTIONS TRADING OPPORTUNITIES (Last {config.RSI_PERIOD * 15 / 60:.1f} hours analysis)"
+        
         table = Table(
-            title=f"TOP {limit} OPTIONS TRADING OPPORTUNITIES (Last {config.RSI_PERIOD * 15 / 60:.1f} hours analysis)",
+            title=title,
             box=box.HEAVY_HEAD,
             show_lines=True,
             title_style="bold white"
@@ -282,21 +300,47 @@ class OptionsScannnerDashboard:
     def display_results(self, analyses: List[Dict], 
                        scan_time: datetime,
                        errors: List[Dict] = None,
-                       market_regime_bullish: bool = True):
-        """Display full dashboard"""
+                       market_regime_bullish: bool = True,
+                       mode: str = 'adaptive',
+                       scan_type: str = 'sp500',
+                       watchlist_file: str = None):
+        """Display full dashboard with mode and watchlist awareness"""
         self.console.clear()
         
         # Calculate next scan time
         next_scan = scan_time + timedelta(minutes=config.REFRESH_INTERVAL_MINUTES)
         
-        # Display header directly
-        self.console.print(self.create_header(scan_time, next_scan, market_regime_bullish))
+        # Display header directly with watchlist info
+        self.console.print(self.create_header(scan_time, next_scan, market_regime_bullish, 
+                                              scan_type, watchlist_file))
         
         # Display compact scoring info
         self.console.print(self.create_compact_scoring_info())
         
-        # Display table directly (not in layout)
-        self.console.print(self.create_results_table(analyses))
+        # Handle mixed mode display
+        if mode == 'mixed':
+            # Separate bullish and bearish stocks
+            bullish_stocks = [a for a in analyses if a.get('score_type') == 'bullish']
+            bearish_stocks = [a for a in analyses if a.get('score_type') == 'bearish']
+            
+            # Display bullish opportunities
+            if bullish_stocks:
+                self.console.print("\n🟢 [bold green]TOP BULLISH OPPORTUNITIES (Uptrending Stocks)[/bold green]")
+                self.console.print(self.create_results_table(bullish_stocks[:10], scan_type=scan_type, 
+                                                            watchlist_file=watchlist_file))
+            
+            # Display bearish opportunities
+            if bearish_stocks:
+                self.console.print("\n🔴 [bold red]TOP BEARISH OPPORTUNITIES (Downtrending Stocks)[/bold red]")
+                self.console.print(self.create_results_table(bearish_stocks[:10], scan_type=scan_type,
+                                                            watchlist_file=watchlist_file))
+            
+            if not bullish_stocks and not bearish_stocks:
+                self.console.print("\n[yellow]No trend-confirmed opportunities found in mixed market[/yellow]")
+        else:
+            # Single mode display
+            self.console.print(self.create_results_table(analyses, scan_type=scan_type,
+                                                        watchlist_file=watchlist_file))
         
         # Display footer
         self.console.print(self.create_footer())

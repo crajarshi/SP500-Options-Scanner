@@ -57,10 +57,34 @@ python sp500_options_scanner.py --warm-cache
 CONTINUOUS MODE (auto-refresh every 30 min):
 python sp500_options_scanner.py --continuous
 
+SCANNER MODE OPTIONS (NEW - Adaptive Dual-Mode):
+python sp500_options_scanner.py --mode adaptive  # Auto-detect market (default)
+python sp500_options_scanner.py --mode bullish   # Force bullish mode
+python sp500_options_scanner.py --mode bearish   # Force bearish mode
+python sp500_options_scanner.py --bearish        # Shortcut for bearish mode
+python sp500_options_scanner.py --mode mixed     # Show both bullish & bearish
+
+WATCHLIST OPTIONS (NEW - Custom Stock Lists):
+python sp500_options_scanner.py --watchlist tech.txt         # Scan tech watchlist
+python sp500_options_scanner.py --watchlist energy.txt       # Scan energy stocks
+python sp500_options_scanner.py --watchlist my_stocks.txt    # Scan personal list
+python sp500_options_scanner.py --watchlist /path/to/list.txt # Use full path
+python sp500_options_scanner.py --watchlist tech.txt --no-regime  # Skip market check
+
+DISPLAY OPTIONS:
+python sp500_options_scanner.py --top 30         # Show top 30 results
+python sp500_options_scanner.py --export         # Auto-export to CSV
+python sp500_options_scanner.py --filter BUY     # Filter specific signals
+
 COMBINATIONS:
 python sp500_options_scanner.py --demo --continuous
 python sp500_options_scanner.py --regime-only --fast-regime
 python sp500_options_scanner.py --quick --continuous
+python sp500_options_scanner.py --mode bearish --top 30
+python sp500_options_scanner.py --demo --mode mixed --export
+python sp500_options_scanner.py --watchlist tech.txt --mode bearish
+python sp500_options_scanner.py --watchlist my_stocks.txt --top 10 --export
+python sp500_options_scanner.py --watchlist energy.txt --no-regime --demo
 
 ==============================================================
                   EXPECTED OUTPUT - NEW FORMAT
@@ -109,14 +133,25 @@ Scanning: 45%|████████████░░░░░| 225/503 [00:2
 │ • AVOID: Score < 30                                  │
 ╰────────────────────────────────────────────────────────╯
 
-TOP OPTIONS TRADING SIGNALS
+TOP OPTIONS TRADING SIGNALS (ADAPTIVE MODE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Rank Ticker Price   Chg%  Score RSI MACD BB OBV ATR Vol$  Signal
+Rank Ticker Price   Chg%  Score RSI MACD BB OBV VOL ATR$  Strategy
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1    AAPL  $175.32 -2.1%  92.5 100 100  85 100 100 $3.4↑ STRONG BUY
-2    MSFT  $382.15 -1.8%  78.5  75 100  70 100   0 $5.2↓ BUY
-3    NVDA  $695.20 -3.2%  55.0  50   0  50 100 100 $12↑  HOLD
-4    TSLA  $242.18 +1.5%  25.0   0   0  10   0   0 $8.7↓ AVOID
+BULLISH MODE (when market is bullish):
+1    AAPL  $175.32 -2.1%  92.5 100 100  85 100 100 $3.4↑ SELL PUT / BUY CALL
+2    MSFT  $382.15 -1.8%  78.5  75 100  70 100  50 $5.2↓ BUY CALL
+
+BEARISH MODE (when market is bearish - current):
+1    WBA   $11.65  +1.3%  86.2  75 100  77 100   0 $0.2↑ BEAR SPREAD / BUY PUT
+2    LDOS  $175.90 +9.2%  85.9  75 100  68 100   0 $0.6↑ BEAR SPREAD / BUY PUT
+3    COST  $974.21 +2.5%  78.2  65 100  60 100   0 $2.9↑ BUY OTM PUT
+
+MIXED MODE (shows both in separate tables):
+🟢 BULLISH OPPORTUNITIES (Uptrending Stocks)
+1    AAPL  $175.32 +2.1%  85.5  25   0  20 100 100 $3.4↑ SELL PUT / BUY CALL
+
+🔴 BEARISH OPPORTUNITIES (Downtrending Stocks)
+1    TSLA  $242.18 -3.5%  82.0  75 100  80   0   0 $8.7↓ BUY PUT / SELL CALL
 
 Color Legend:
 • Green (80-100): Strong signal
@@ -135,24 +170,54 @@ Results saved to: output/intraday_scans/sp500_scan_2025-08-06_1045.csv
               UNDERSTANDING THE OUTPUT
 ==============================================================
 
-MARKET REGIME (Must Pass All 3):
+ADAPTIVE MODE (NEW FEATURE):
+The scanner now automatically detects market conditions and adjusts:
+• BULLISH MARKET → Shows SELL PUT / BUY CALL opportunities
+• BEARISH MARKET → Shows BUY PUT / SELL CALL opportunities  
+• MIXED MARKET → Shows both, but only for trend-confirmed stocks
+
+MODE DETECTION:
+• Adaptive (default): Auto-detects based on market regime
+• Bullish: Force bullish signals only
+• Bearish: Force bearish signals only
+• Mixed: Show both types in separate tables
+
+MARKET REGIME (3 Factors):
 • SPY > 50-day MA ✅ = Bullish trend
 • >60% stocks > 50MA ✅ = Strong breadth
 • VIX < 25 ✅ = Low fear
+→ If <2 factors positive = BEARISH MODE
+→ If all 3 positive = BULLISH MODE
+→ If 2/3 positive = MIXED MODE
 
-INDIVIDUAL SCORES (0-100):
-• RSI: Momentum indicator
-• MACD: Trend strength
-• BB: Price position in bands
-• OBV: Volume confirmation
-• ATR: Volatility expansion
+SCORING DIFFERENCES BY MODE:
+BULLISH MODE:
+• RSI: 100pts if oversold (<30), 0pts if overbought (>70)
+• MACD: 100pts if bullish crossover
+• BB: 100pts at lower band (oversold)
 
-COMPOSITE SCORE:
-• Weighted average of all indicators
-• Higher = Stronger bullish signal
-• >85 = High conviction trade
+BEARISH MODE (inverted scoring):
+• RSI: 100pts if overbought (>70), 0pts if oversold (<30)
+• MACD: 100pts if bearish crossover
+• BB: 100pts at upper band (overbought)
 
-VOLATILITY (Vol$):
+MIXED MODE:
+• Only shows stocks with confirmed trends
+• Bullish signals for uptrending stocks only
+• Bearish signals for downtrending stocks only
+
+OPTION STRATEGIES:
+Bullish Strategies:
+• SELL PUT / BUY CALL: Strong bullish (>85)
+• BUY CALL: Moderate bullish (70-85)
+• BULL SPREAD: Mild bullish (50-70)
+
+Bearish Strategies:
+• BEAR SPREAD / BUY PUT: Strong bearish (>85)
+• BUY OTM PUT: Moderate bearish (70-85)
+• BUY PUT / SELL CALL: Mild bearish (50-70)
+
+VOLATILITY (ATR$):
 • ↑ = Expanding (buy options)
 • ↓ = Contracting (sell options)
 
@@ -177,11 +242,44 @@ SLOW PERFORMANCE:
 → Skip breadth: python sp500_options_scanner.py --fast-regime
 
 ==============================================================
+                 CREATING WATCHLIST FILES
+==============================================================
+
+LOCATION: watchlists/ folder in project directory
+
+FORMAT: Simple text file with one ticker per line
+- Use # for comments
+- Blank lines are ignored
+- Ticker symbols are automatically converted to uppercase
+
+EXAMPLE watchlists/tech.txt:
+# Major tech companies
+AAPL
+MSFT
+GOOGL
+
+# Semiconductors
+NVDA
+AMD
+
+INCLUDED SAMPLE FILES:
+- tech.txt: Technology stocks (AAPL, MSFT, NVDA, etc.)
+- energy.txt: Energy sector (XOM, CVX, ENPH, etc.)
+- my_stocks.txt: Example personal portfolio
+
+CREATE YOUR OWN:
+1. Create a new .txt file in watchlists/ folder
+2. Add one ticker symbol per line
+3. Use # for comments/organization
+4. Save and run: python sp500_options_scanner.py --watchlist yourfile.txt
+
+==============================================================
                     OUTPUT FILES
 ==============================================================
 
 CSV RESULTS:
-output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv
+S&P 500 Scans: output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv
+Watchlist Scans: output/watchlist_scans/[watchlist_name]_scan_YYYY-MM-DD_HHMM.csv
 
 Contains:
 - All stock scores and indicators

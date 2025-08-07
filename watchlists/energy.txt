@@ -1,0 +1,15 @@
+# Oil & Gas Majors
+XOM
+CVX
+COP
+SLB
+
+# Renewable Energy
+ENPH
+SEDG
+RUN
+
+# Midstream & Refiners
+KMI
+PSX
+MPC

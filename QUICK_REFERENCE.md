@@ -16,8 +16,17 @@ python sp500_options_scanner.py --quick
 # Continuous mode (auto-refresh every 30 min)
 python sp500_options_scanner.py --continuous
 
+# Watchlist mode (scan custom stocks)
+python sp500_options_scanner.py --watchlist tech.txt
+python sp500_options_scanner.py --watchlist my_stocks.txt --no-regime
+
+# Scanner modes
+python sp500_options_scanner.py --mode adaptive  # Default
+python sp500_options_scanner.py --mode bullish   # Force bullish
+python sp500_options_scanner.py --mode bearish   # Force bearish
+
 # Combine modes
-python sp500_options_scanner.py --quick --continuous
+python sp500_options_scanner.py --watchlist tech.txt --mode bearish --top 10
 ```
 
 ## 📊 Reading the Console Output
@@ -44,12 +53,60 @@ Rank  Ticker  Price    Chg%   Score  ATR    Vol  Signal
 | Vol | Trend direction | ↑ = expanding (better for options) |
 | Signal | Action to take | 🟢 = Bullish opportunity |
 
+## 📝 Watchlist Files
+
+### Creating a Watchlist
+Create text files in `watchlists/` folder:
+```
+# watchlists/tech.txt
+AAPL    # Apple
+MSFT    # Microsoft
+NVDA    # Nvidia
+AMD     # Comments supported
+```
+
+### Using Watchlists
+```bash
+# Basic watchlist scan
+python sp500_options_scanner.py --watchlist tech.txt
+
+# Skip market check for speed
+python sp500_options_scanner.py --watchlist my_stocks.txt --no-regime
+
+# Export results
+python sp500_options_scanner.py --watchlist energy.txt --export
+```
+
+## 🔄 Scanner Modes (Adaptive Feature)
+
+### Adaptive Mode (Default)
+- Automatically detects market conditions
+- Switches between bullish/bearish/mixed based on:
+  - SPY trend vs 50MA
+  - VIX level (<25 bullish, >25 bearish)
+  - Market breadth (>60% bullish)
+
+### Mode Selection
+| Mode | When to Use | Finds |
+|------|------------|-------|
+| **Adaptive** | Most times | Auto-adjusts to market |
+| **Bullish** | Uptrending market | SELL PUT, BUY CALL |
+| **Bearish** | Downtrending market | BUY PUT, SELL CALL |
+| **Mixed** | Uncertain market | Both (trend-confirmed only) |
+
 ## 🎯 Signal Interpretations
 
-### Strong Buy (Score > 85) 🟢
+### In BULLISH Mode:
+#### Strong Buy (Score > 85) 🟢
 - **Meaning**: Multiple strong bullish signals
-- **Best Options**: Buy calls, sell puts
+- **Best Options**: SELL PUT, BUY CALL
 - **Ideal When**: ATR is ↑ (rising)
+
+### In BEARISH Mode:
+#### Strong Bearish (Score > 85) 🔴
+- **Meaning**: Multiple strong bearish signals
+- **Best Options**: BUY PUT, SELL CALL
+- **Ideal When**: Stock is overbought
 
 ### Buy (Score 70-85) 🟢
 - **Meaning**: Good bullish setup

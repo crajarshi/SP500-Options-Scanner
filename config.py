@@ -50,8 +50,16 @@ MIN_TRADING_DAYS_REQUIRED = 252  # Minimum days of history required
 HALT_ON_BEARISH_REGIME = False  # If True, stops scan when regime not bullish
 SHOW_REGIME_WARNING = True  # Display warnings when regime not bullish
 
+# Scanner Mode Settings
+DEFAULT_SCANNER_MODE = 'adaptive'  # 'adaptive', 'bullish', 'bearish', 'mixed'
+BEARISH_BREADTH_THRESHOLD = 40  # Below this = bearish mode
+BULLISH_BREADTH_THRESHOLD = 60  # Above this = bullish mode
+BEARISH_VIX_THRESHOLD = 25  # Above this = bearish mode
+BULLISH_VIX_THRESHOLD = 20  # Below this = bullish mode
+MIXED_MODE_MIN_SCORE = 70  # Higher threshold for mixed markets
+TREND_CONFIRMATION_THRESHOLD = 0.5  # Min % distance from MA for trend confirmation
+
 # Future defensive mode thresholds (Phase 2)
-BEARISH_BREADTH_THRESHOLD = 40  # When to consider put opportunities
 EXTREME_VIX_THRESHOLD = 30  # High volatility opportunities
 DEFENSIVE_MODE_ENABLED = False  # Future feature flag
 
@@ -101,6 +109,11 @@ REFRESH_INTERVAL_MINUTES = 30  # Auto-refresh interval
 TOP_STOCKS_DISPLAY = 20  # Number of top stocks to show (increased to show more opportunities)
 SHOW_DETAILED_INDICATORS = True  # Show individual indicator values
 
+# Watchlist settings
+WATCHLIST_DIR = 'watchlists'  # Default directory for watchlist files
+WATCHLIST_CACHE_ENABLED = True  # Use cache for watchlist stocks
+WATCHLIST_OUTPUT_DIR = 'output/watchlist_scans'  # Separate output directory for watchlist scans
+
 # Console colors (for rich library)
 COLOR_STRONG_BUY = 'bright_green'
 COLOR_BUY = 'green'
@@ -108,5 +121,5 @@ COLOR_HOLD = 'white'
 COLOR_AVOID = 'red'
 
 # Create directories if they don't exist
-for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR]:
+for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR, WATCHLIST_DIR, WATCHLIST_OUTPUT_DIR]:
     os.makedirs(directory, exist_ok=True)

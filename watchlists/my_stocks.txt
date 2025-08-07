@@ -1,0 +1,9 @@
+# My portfolio watchlist
+
+AAPL
+NVDA
+TSLA
+PLTR
+META
+GOOG
+AMD

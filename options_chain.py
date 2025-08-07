@@ -78,7 +78,7 @@ class OptionsChainAnalyzer:
         self.cache_expiry = {}  # Cache expiry times
         
     def get_optimal_contracts(self, symbol: str, signal_type: str, 
-                             stock_price: float) -> Optional[List[OptionsContract]]:
+                             stock_price: float, scan_context: Dict = None) -> Optional[List[OptionsContract]]:
         """
         Get optimal options contracts for a stock based on signal type
         
@@ -118,7 +118,7 @@ class OptionsChainAnalyzer:
                 target_delta = config.OPTIONS_NEUTRAL_DELTA
             
             # Fetch options chain (with caching)
-            options_chain = self._fetch_options_chain(symbol)
+            options_chain = self._fetch_options_chain(symbol, scan_context)
             if not options_chain:
                 logger.warning(f"No options chain available for {symbol}")
                 return None
@@ -131,7 +131,7 @@ class OptionsChainAnalyzer:
                 contracts = [c for c in options_chain if c.contract_type == contract_type]
             
             # Filter by expiration window and get the SINGLE best expiration
-            best_expiration_contracts = self._get_best_expiration_contracts(contracts)
+            best_expiration_contracts = self._get_best_expiration_contracts(contracts, scan_context)
             
             if not best_expiration_contracts:
                 logger.info(f"No contracts in target expiration window for {symbol}")
@@ -159,7 +159,7 @@ class OptionsChainAnalyzer:
             logger.error(f"Error getting optimal contracts for {symbol}: {e}")
             return None
     
-    def _fetch_options_chain(self, symbol: str) -> Optional[List[OptionsContract]]:
+    def _fetch_options_chain(self, symbol: str, scan_context: Dict = None) -> Optional[List[OptionsContract]]:
         """
         Fetch options chain with caching
         
@@ -169,8 +169,13 @@ class OptionsChainAnalyzer:
         Returns:
             List of OptionsContract objects or None
         """
-        # Check cache
-        cache_key = f"{symbol}_chain"
+        # Check cache - include market state in key
+        if scan_context:
+            market_state = 'open' if scan_context.get('is_market_open', True) else 'closed'
+            cache_key = f"{symbol}_chain_{market_state}"
+        else:
+            cache_key = f"{symbol}_chain"
+            
         if cache_key in self.cache:
             expiry_time = self.cache_expiry.get(cache_key, datetime.min)
             if datetime.now() < expiry_time:
@@ -190,7 +195,7 @@ class OptionsChainAnalyzer:
             return None
         
         # Parse into OptionsContract objects
-        contracts = self._parse_options_data(chain_data, symbol)
+        contracts = self._parse_options_data(chain_data, symbol, scan_context)
         
         # Cache the results
         self.cache[cache_key] = contracts
@@ -200,7 +205,7 @@ class OptionsChainAnalyzer:
         
         return contracts
     
-    def _parse_options_data(self, chain_data: Dict, symbol: str) -> List[OptionsContract]:
+    def _parse_options_data(self, chain_data: Dict, symbol: str, scan_context: Dict = None) -> List[OptionsContract]:
         """
         Parse raw options data into OptionsContract objects
         
@@ -213,10 +218,13 @@ class OptionsChainAnalyzer:
         """
         contracts = []
         
+        # Use reference date from context or current time
+        reference_date = scan_context['reference_date'] if scan_context else datetime.now()
+        
         for expiration_date, strikes in chain_data.items():
-            # Calculate days to expiry
+            # Calculate days to expiry from reference date
             exp_date = datetime.strptime(expiration_date, '%Y-%m-%d')
-            days_to_expiry = (exp_date - datetime.now()).days
+            days_to_expiry = (exp_date - reference_date).days
             
             # Skip if outside our window
             if days_to_expiry < 0 or days_to_expiry > 90:
@@ -319,7 +327,7 @@ class OptionsChainAnalyzer:
         
         return oi_score + spread_score + vol_score
     
-    def _get_best_expiration_contracts(self, contracts: List[OptionsContract]) -> List[OptionsContract]:
+    def _get_best_expiration_contracts(self, contracts: List[OptionsContract], scan_context: Dict = None) -> List[OptionsContract]:
         """
         Get contracts from the SINGLE best expiration date closest to 45 days
         

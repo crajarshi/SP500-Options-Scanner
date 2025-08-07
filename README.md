@@ -250,6 +250,9 @@ python sp500_options_scanner.py --watchlist energy.txt
 # Skip market regime check for faster results
 python sp500_options_scanner.py --watchlist my_stocks.txt --no-regime
 
+# Get options recommendations for your watchlist
+python sp500_options_scanner.py --watchlist my_stocks.txt --options
+
 # Combine with other options
 python sp500_options_scanner.py --watchlist tech.txt --mode bearish --top 10
 ```
@@ -449,6 +452,33 @@ python sp500_options_scanner.py --quick
 - Full S&P 500 scan takes approximately 8-10 minutes
 - Caching reduces redundant API calls
 
+## After-Hours Trading Preparation 🌙
+
+The scanner now automatically adapts when markets are closed, allowing you to prepare your trades for the next session:
+
+### How It Works
+1. **Market Detection**: Scanner checks Alpaca's Clock API to determine if markets are open
+2. **Next-Day Calculation**: If closed, it finds the next trading day (skipping weekends/holidays)
+3. **Options Analysis**: All options expiration dates are calculated from the NEXT trading day
+4. **Clear Indication**: Dashboard shows "📅 Options Analysis for: [Next Trading Date]"
+
+### Example Usage
+```bash
+# Run after market close (4 PM ET)
+python sp500_options_scanner.py --watchlist my_stocks.txt --options
+
+# Output will show:
+# Market Status: AFTER-HOURS
+# 📅 Options Analysis for: August 08, 2025
+# Options expirations calculated from next trading day
+```
+
+### Benefits
+- **Prepare Orders**: Set up your options orders for market open
+- **Weekend Analysis**: Run scans on weekends to plan Monday's trades
+- **Holiday Planning**: Automatically handles market holidays
+- **Accurate Expirations**: Options DTE (days to expiration) calculated correctly
+
 ## Best Practices
 
 ### For Options Trading
@@ -487,7 +517,32 @@ logging.basicConfig(level=logging.DEBUG)
 
 ## 🆕 What's New - Options Trading Enhancements
 
-### Latest Updates (v2.0)
+### Latest Updates (v3.0) - After-Hours Options Analysis 🌙
+**NEW: Prepare your trades when markets are closed!**
+
+1. **Next-Day Options Chain Analysis**: 
+   - Automatically detects when markets are closed
+   - Calculates options expiration from the NEXT trading day
+   - Shows "📅 Options Analysis for: [Next Trading Date]" in dashboard
+
+2. **Smart Market Detection**:
+   - Uses Alpaca v2 Clock API to check real-time market status
+   - Uses Alpaca v2 Calendar API to find next trading day
+   - Handles weekends and holidays automatically
+
+3. **Single Optimal Contract Selection**:
+   - Returns exactly ONE best contract per stock
+   - Filters to single best expiration (~45 days out)
+   - Targets specific deltas: 0.70 for directional, 0.50 for neutral
+
+4. **Options Recommendations with `--options` Flag**:
+   ```bash
+   python sp500_options_scanner.py --watchlist my_stocks.txt --options
+   ```
+   - Shows strike, expiration, delta, bid/ask, spread %, OI, volume, IV
+   - Only displays liquid contracts (100+ OI, <10% spread)
+
+### Previous Updates (v2.0)
 1. **Market Regime Filter**: Automatically checks if SPY > 50-day MA before scanning
 2. **ATR Integration**: 10% weight for volatility expansion/contraction signals  
 3. **Enhanced Dashboard**: Shows ATR values and volatility trends (↑/↓)

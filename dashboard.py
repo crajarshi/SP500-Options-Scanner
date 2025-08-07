@@ -24,7 +24,7 @@ class OptionsScannnerDashboard:
         self.console = Console()
         self.eastern = pytz.timezone('US/Eastern')
         
-    def get_market_status(self) -> Tuple[str, str]:
+    def get_market_status(self, scan_context: Dict = None) -> Tuple[str, str]:
         """
         Get current market status
         
@@ -84,9 +84,9 @@ class OptionsScannnerDashboard:
             return f"OBV:{'✓' if positive else '✗'}"
     
     def create_header(self, scan_time: datetime, next_scan: datetime, market_regime_bullish: bool = True,
-                     scan_type: str = 'sp500', watchlist_file: str = None) -> Panel:
+                     scan_type: str = 'sp500', watchlist_file: str = None, scan_context: Dict = None) -> Panel:
         """Create dashboard header with watchlist support"""
-        market_status, current_time = self.get_market_status()
+        market_status, current_time = self.get_market_status(scan_context)
         status_color = "green" if market_status == "OPEN" else "yellow"
         
         # Calculate time until next scan
@@ -107,12 +107,20 @@ class OptionsScannnerDashboard:
         else:
             title = "[bold white]S&P 500 Intraday Options Scanner[/bold white]"
         
+        # Add data freshness indicator if market is closed
+        data_info = ""
+        if scan_context and not scan_context.get('is_market_open'):
+            if scan_context.get('reference_date'):
+                ref_date = scan_context['reference_date']
+                data_info = f"\n[cyan]📅 Options Analysis for: {ref_date.strftime('%B %d, %Y')}[/cyan]"
+        
         header_text = (
             f"{title}\n\n"
             f"Market Status: [{status_color}]{market_status}[/{status_color}]    "
             f"Time: {current_time}    "
             f"Next Scan: {minutes_until:02d}:{seconds_until:02d}"
             f"{regime_text}"
+            f"{data_info}"
         )
         
         return Panel(
@@ -303,7 +311,8 @@ class OptionsScannnerDashboard:
                        market_regime_bullish: bool = True,
                        mode: str = 'adaptive',
                        scan_type: str = 'sp500',
-                       watchlist_file: str = None):
+                       watchlist_file: str = None,
+                       scan_context: Dict = None):
         """Display full dashboard with mode and watchlist awareness"""
         self.console.clear()
         
@@ -312,7 +321,7 @@ class OptionsScannnerDashboard:
         
         # Display header directly with watchlist info
         self.console.print(self.create_header(scan_time, next_scan, market_regime_bullish, 
-                                              scan_type, watchlist_file))
+                                              scan_type, watchlist_file, scan_context))
         
         # Display compact scoring info
         self.console.print(self.create_compact_scoring_info())

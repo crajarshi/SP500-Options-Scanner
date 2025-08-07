@@ -87,6 +87,50 @@ class SP500OptionsScanner:
         self.running = False
         sys.exit(0)
     
+    def build_scan_context(self, scan_mode: str = 'adaptive') -> Dict:
+        """
+        Build context object with all market timing info
+        
+        Args:
+            scan_mode: Scanning mode ('bullish', 'bearish', 'mixed', 'adaptive')
+            
+        Returns:
+            Dictionary containing all scan context information
+        """
+        # Get market clock information
+        clock = self.data_provider.get_market_clock()
+        
+        if clock and clock['is_open']:
+            # Market is open - use current time
+            reference_date = datetime.now()
+            is_realtime = True
+            data_timestamp = datetime.now()
+        else:
+            # Market is closed - use next trading day
+            reference_date = self.data_provider.get_next_trading_day()
+            is_realtime = False
+            # Data timestamp is last market close
+            data_timestamp = clock['next_close'] if clock and clock['next_close'] else datetime.now()
+        
+        # Build the context dictionary
+        scan_context = {
+            "reference_date": reference_date,
+            "is_market_open": clock['is_open'] if clock else False,
+            "next_market_open": clock['next_open'] if clock else None,
+            "last_market_close": clock['next_close'] if clock else None,
+            "scan_mode": scan_mode,
+            "data_timestamp": data_timestamp,
+            "is_realtime": is_realtime
+        }
+        
+        # Log the context for debugging
+        logger.info(f"Scan context built - Market {'OPEN' if scan_context['is_market_open'] else 'CLOSED'}")
+        logger.info(f"Reference date: {reference_date.strftime('%Y-%m-%d %H:%M')}")
+        if not scan_context['is_market_open']:
+            logger.info(f"Next market open: {scan_context['next_market_open']}")
+        
+        return scan_context
+    
     def get_cache_path(self, cache_type: str, identifier: str = "") -> str:
         """Get cache file path"""
         filename = f"{cache_type}_{identifier}.pkl" if identifier else f"{cache_type}.pkl"
@@ -676,7 +720,7 @@ class SP500OptionsScanner:
             }
             return True
     
-    def add_options_recommendations(self, analyses: List[Dict], scan_type: str = 'sp500'):
+    def add_options_recommendations(self, analyses: List[Dict], scan_type: str = 'sp500', scan_context: Dict = None):
         """
         Add options contract recommendations to analysis results
         
@@ -715,7 +759,7 @@ class SP500OptionsScanner:
                 
                 # Get optimal contracts
                 contracts = self.options_analyzer.get_optimal_contracts(
-                    ticker, signal_type, stock_price
+                    ticker, signal_type, stock_price, scan_context
                 )
                 
                 if contracts:
@@ -751,6 +795,9 @@ class SP500OptionsScanner:
         scan_time = datetime.now()
         self.errors = []
         
+        # Build scan context with market timing info
+        scan_context = self.build_scan_context(self.scanner_mode)
+        
         # Check market regime first (unless skipped)
         if not self.skip_regime:
             if not self.demo_mode:
@@ -764,8 +811,9 @@ class SP500OptionsScanner:
             self.market_regime_bullish = True
             logger.info("Skipping market regime check as requested")
         
-        # Determine effective mode
+        # Determine effective mode and update context
         self.effective_mode = self.determine_effective_mode()
+        scan_context['scan_mode'] = self.effective_mode
         
         # Display mode information
         mode_display = {
@@ -788,6 +836,10 @@ class SP500OptionsScanner:
         # Process stocks with progress bar
         analyses = []
         self.dashboard.console.print(f"\nProcessing {len(tickers)} stocks...")
+        
+        # Log if market is closed
+        if not scan_context['is_market_open']:
+            logger.info(f"Market is CLOSED - analyzing for {scan_context['reference_date'].strftime('%Y-%m-%d')}")
         
         with tqdm(total=len(tickers), desc="Scanning", ncols=100) as pbar:
             # Process in batches to manage memory and API limits
@@ -823,7 +875,7 @@ class SP500OptionsScanner:
         if self.fetch_options and self.options_analyzer:
             logger.info("Fetching options contract recommendations for top stocks...")
             # Pass scan_type to determine filtering logic
-            self.add_options_recommendations(display_analyses, scan_type)
+            self.add_options_recommendations(display_analyses, scan_type, scan_context)
         
         # Auto-export if requested
         if auto_export:
@@ -837,7 +889,8 @@ class SP500OptionsScanner:
             market_regime_bullish=getattr(self, 'market_regime_bullish', True),
             mode=self.effective_mode,
             scan_type=scan_type,
-            watchlist_file=self.watchlist_file
+            watchlist_file=self.watchlist_file,
+            scan_context=scan_context
         )
         
         # Display summary for watchlist including invalid tickers

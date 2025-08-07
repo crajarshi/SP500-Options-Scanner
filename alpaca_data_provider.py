@@ -585,3 +585,122 @@ class AlpacaDataProvider:
         except Exception as e:
             logger.error(f"Alpaca connection test failed: {e}")
             return False
+    
+    def get_market_clock(self) -> Optional[Dict]:
+        """
+        Get current market status from Alpaca Clock API
+        
+        Returns:
+            Dict with market clock information or None if error
+            {
+                'is_open': bool,
+                'timestamp': datetime,
+                'next_open': datetime,
+                'next_close': datetime
+            }
+        """
+        try:
+            # Use Alpaca trading API v2 endpoint for clock
+            endpoint = f"{config.ALPACA_BASE_URL}/v2/clock"
+            
+            response = self.session.get(endpoint)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Parse timestamps
+            return {
+                'is_open': data.get('is_open', False),
+                'timestamp': datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00')) if 'timestamp' in data else datetime.now(),
+                'next_open': datetime.fromisoformat(data['next_open'].replace('Z', '+00:00')) if 'next_open' in data else None,
+                'next_close': datetime.fromisoformat(data['next_close'].replace('Z', '+00:00')) if 'next_close' in data else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching market clock: {e}")
+            # Return default based on current time
+            from pytz import timezone
+            et = timezone('US/Eastern')
+            now_et = datetime.now(et)
+            hour = now_et.hour
+            minute = now_et.minute
+            
+            # Simple market hours check (9:30 AM - 4:00 PM ET)
+            is_open = (
+                now_et.weekday() < 5 and  # Monday-Friday
+                ((hour == 9 and minute >= 30) or (10 <= hour < 16))
+            )
+            
+            return {
+                'is_open': is_open,
+                'timestamp': datetime.now(),
+                'next_open': None,
+                'next_close': None
+            }
+    
+    def get_next_trading_day(self) -> datetime:
+        """
+        Get the next trading day from Alpaca Calendar API
+        
+        Returns:
+            datetime object for next trading day at market open
+        """
+        try:
+            # Get calendar for next 7 days using v2 API
+            endpoint = f"{config.ALPACA_BASE_URL}/v2/calendar"
+            
+            start_date = datetime.now().strftime('%Y-%m-%d')
+            end_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+            
+            params = {
+                'start': start_date,
+                'end': end_date
+            }
+            
+            response = self.session.get(endpoint, params=params)
+            response.raise_for_status()
+            
+            calendar_days = response.json()
+            
+            if calendar_days:
+                # Get the first trading day from today
+                today = datetime.now().date()
+                
+                for day in calendar_days:
+                    trading_date = datetime.strptime(day['date'], '%Y-%m-%d').date()
+                    
+                    # If it's today and market is still open, use today
+                    if trading_date == today:
+                        clock = self.get_market_clock()
+                        if clock and clock['is_open']:
+                            # Return today at current time
+                            return datetime.now()
+                    
+                    # If it's a future day, return that day at market open
+                    if trading_date > today:
+                        # Parse market open time
+                        open_time = datetime.strptime(
+                            f"{day['date']} {day['open']}", 
+                            '%Y-%m-%d %H:%M'
+                        )
+                        return open_time
+                
+            # Fallback: return next weekday at 9:30 AM ET
+            from pytz import timezone
+            et = timezone('US/Eastern')
+            next_day = datetime.now(et) + timedelta(days=1)
+            
+            # Skip to Monday if it's weekend
+            while next_day.weekday() >= 5:
+                next_day += timedelta(days=1)
+            
+            # Set to market open time
+            return next_day.replace(hour=9, minute=30, second=0, microsecond=0)
+            
+        except Exception as e:
+            logger.error(f"Error fetching next trading day: {e}")
+            # Fallback to next weekday
+            next_day = datetime.now() + timedelta(days=1)
+            while next_day.weekday() >= 5:  # Skip weekends
+                next_day += timedelta(days=1)
+            return next_day.replace(hour=9, minute=30, second=0, microsecond=0)

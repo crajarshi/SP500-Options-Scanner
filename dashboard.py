@@ -112,6 +112,19 @@ class OptionsScannnerDashboard:
             border_style="bright_blue"
         )
     
+    def create_compact_scoring_info(self) -> Panel:
+        """Create a compact scoring info panel"""
+        info_text = (
+            "[bold]Scoring:[/bold] MACD 30% + RSI 30% + BB 20% + OBV 10% + VOL 10% | "
+            "[bold]Signals:[/bold] >85 STRONG BUY | 70-85 BUY | 50-70 NEUTRAL+ | 30-50 NEUTRAL- | <30 SELL"
+        )
+        return Panel(
+            info_text,
+            box=box.MINIMAL,
+            border_style="dim",
+            padding=(0, 1)
+        )
+    
     def create_scoring_explanation(self) -> Panel:
         """Create a panel explaining the scoring system"""
         explanation_text = (
@@ -149,28 +162,28 @@ class OptionsScannnerDashboard:
             limit = config.TOP_STOCKS_DISPLAY
         
         table = Table(
-            title=f"TOP OPTIONS TRADING SIGNALS (Last {config.RSI_PERIOD * 15 / 60:.1f} hours analysis)",
+            title=f"TOP {limit} OPTIONS TRADING OPPORTUNITIES (Last {config.RSI_PERIOD * 15 / 60:.1f} hours analysis)",
             box=box.HEAVY_HEAD,
             show_lines=True,
             title_style="bold white"
         )
         
         # Add columns - Enhanced with individual scores
-        table.add_column("Rank", style="cyan", width=5, justify="center")
-        table.add_column("Ticker", style="bold white", width=7)
-        table.add_column("Price", style="white", width=9, justify="right")
-        table.add_column("Chg%", width=7, justify="right")
-        table.add_column("Score", style="bold", width=6, justify="center")
+        table.add_column("#", style="cyan", width=3, justify="center")
+        table.add_column("Ticker", style="bold white", width=6)
+        table.add_column("Price", style="white", width=8, justify="right")
+        table.add_column("Chg%", width=6, justify="right")
+        table.add_column("Score", style="bold", width=5, justify="center")
         
-        # Individual indicator scores
-        table.add_column("RSI", width=5, justify="center")
-        table.add_column("MACD", width=5, justify="center")
-        table.add_column("BB", width=5, justify="center")
-        table.add_column("OBV", width=5, justify="center")
-        table.add_column("ATR", width=5, justify="center")
+        # Individual indicator scores (more compact)
+        table.add_column("RSI", width=4, justify="center")
+        table.add_column("MCD", width=4, justify="center")
+        table.add_column("BB", width=4, justify="center")
+        table.add_column("OBV", width=4, justify="center")
+        table.add_column("VOL", width=4, justify="center")
         
-        table.add_column("Vol$", width=7, justify="right")
-        table.add_column("Signal", width=22)
+        table.add_column("ATR$", width=6, justify="right")
+        table.add_column("Strategy", width=22)
         
         # Add rows
         for i, analysis in enumerate(analyses[:limit]):
@@ -209,6 +222,7 @@ class OptionsScannnerDashboard:
             macd_score_text = format_score(scores.get('macd_score', 0))
             bb_score_text = format_score(scores.get('bollinger_score', 0))
             obv_score_text = format_score(scores.get('obv_score', 0))
+            vol_score_text = format_score(scores.get('volume_score', 0))
             atr_score_text = format_score(scores.get('atr_score', 0))
             
             # ATR value with trend
@@ -222,10 +236,14 @@ class OptionsScannnerDashboard:
             
             # Color signal text based on type
             signal_colors = {
-                'STRONG_BUY': config.COLOR_STRONG_BUY,
-                'BUY': config.COLOR_BUY,
-                'HOLD': config.COLOR_HOLD,
-                'AVOID': config.COLOR_AVOID
+                'STRONG_BUY': 'bright_green',
+                'BUY': 'green',
+                'NEUTRAL_BULL': 'yellow',
+                'NEUTRAL_BEAR': 'orange1',
+                'STRONG_SELL': 'red',
+                # Legacy
+                'HOLD': 'white',
+                'AVOID': 'red'
             }
             signal_color = signal_colors.get(analysis['signal']['type'], 'white')
             signal_text = Text(analysis['signal']['text'], style=signal_color)
@@ -240,7 +258,7 @@ class OptionsScannnerDashboard:
                 macd_score_text,
                 bb_score_text,
                 obv_score_text,
-                atr_score_text,
+                vol_score_text,
                 vol_text,
                 signal_text
             ]
@@ -252,8 +270,8 @@ class OptionsScannnerDashboard:
     def create_footer(self) -> Panel:
         """Create dashboard footer with instructions"""
         footer_text = (
-            "[F1] Full List  [F2] Filter  [R] Refresh Now  "
-            "[E] Export CSV  [Q] Quit"
+            "Use command-line options: --top N for more results | --filter SIGNAL_TYPE | "
+            "--export for CSV | --continuous for auto-refresh"
         )
         return Panel(
             Align.center(footer_text),
@@ -271,16 +289,17 @@ class OptionsScannnerDashboard:
         # Calculate next scan time
         next_scan = scan_time + timedelta(minutes=config.REFRESH_INTERVAL_MINUTES)
         
-        # Create layout with scoring explanation
-        layout = Layout()
-        layout.split_column(
-            Layout(self.create_header(scan_time, next_scan, market_regime_bullish), size=6 if not market_regime_bullish else 5),
-            Layout(self.create_scoring_explanation(), size=12),
-            Layout(self.create_results_table(analyses), size=20),
-            Layout(self.create_footer(), size=3)
-        )
+        # Display header directly
+        self.console.print(self.create_header(scan_time, next_scan, market_regime_bullish))
         
-        self.console.print(layout)
+        # Display compact scoring info
+        self.console.print(self.create_compact_scoring_info())
+        
+        # Display table directly (not in layout)
+        self.console.print(self.create_results_table(analyses))
+        
+        # Display footer
+        self.console.print(self.create_footer())
         
         # Show error summary if any
         if errors:

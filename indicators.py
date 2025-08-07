@@ -178,6 +178,11 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     atr = calculate_atr(high_prices, low_prices, close_prices, period=config.ATR_PERIOD)
     atr_sma = atr.rolling(window=config.ATR_SMA_PERIOD).mean()
     
+    # Calculate volume metrics
+    avg_volume = volumes.rolling(window=20).mean()  # 20-period average volume
+    current_volume = volumes.iloc[-1]
+    relative_volume = current_volume / avg_volume.iloc[-1] if avg_volume.iloc[-1] > 0 else 1.0
+    
     # Get latest values (most recent bar)
     latest_idx = -1
     current_price = close_prices.iloc[latest_idx]
@@ -216,6 +221,12 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
             'sma': atr_sma.iloc[latest_idx],
             'above_sma': atr.iloc[latest_idx] > atr_sma.iloc[latest_idx],
             'trend': 'Rising' if atr.iloc[latest_idx] > atr_sma.iloc[latest_idx] else 'Falling'
+        },
+        'volume': {
+            'current': current_volume,
+            'average': avg_volume.iloc[latest_idx],
+            'relative': relative_volume,
+            'above_average': relative_volume > 1.0
         }
     }
     

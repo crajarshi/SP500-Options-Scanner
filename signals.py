@@ -69,6 +69,26 @@ def calculate_atr_score(atr_above_sma: bool) -> float:
     return 100.0 if atr_above_sma else 0.0
 
 
+def calculate_volume_score(relative_volume: float) -> float:
+    """
+    Calculate volume score (0-100)
+    
+    Scoring logic:
+    - Relative volume > 2.0: Score = 100 (very high volume)
+    - Relative volume 1.5-2.0: Score = 75
+    - Relative volume 1.0-1.5: Score = 50
+    - Relative volume < 1.0: Score = 0 (below average)
+    """
+    if relative_volume >= 2.0:
+        return 100.0
+    elif relative_volume >= 1.5:
+        return 75.0
+    elif relative_volume >= 1.0:
+        return 50.0
+    else:
+        return 0.0
+
+
 def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
     """
     Calculate individual and composite scores from indicators
@@ -85,6 +105,7 @@ def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
     macd_score = calculate_macd_score(indicators['macd']['bullish'])
     obv_score = calculate_obv_score(indicators['obv']['above_sma'])
     atr_score = calculate_atr_score(indicators['atr']['above_sma'])
+    volume_score = calculate_volume_score(indicators.get('volume', {}).get('relative', 1.0))
     
     # Calculate weighted composite score
     composite_score = (
@@ -92,6 +113,7 @@ def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
         macd_score * config.WEIGHT_MACD +
         bollinger_score * config.WEIGHT_BOLLINGER +
         obv_score * config.WEIGHT_OBV +
+        volume_score * config.WEIGHT_VOLUME +
         atr_score * config.WEIGHT_ATR
     )
     
@@ -100,6 +122,7 @@ def calculate_composite_score(indicators: Dict) -> Dict[str, float]:
         'macd_score': round(macd_score, config.DECIMAL_PLACES),
         'bollinger_score': round(bollinger_score, config.DECIMAL_PLACES),
         'obv_score': round(obv_score, config.DECIMAL_PLACES),
+        'volume_score': round(volume_score, config.DECIMAL_PLACES),
         'atr_score': round(atr_score, config.DECIMAL_PLACES),
         'composite_score': round(composite_score, config.DECIMAL_PLACES)
     }
@@ -116,13 +139,20 @@ def generate_signal(composite_score: float) -> Tuple[str, str, str]:
         Tuple of (signal_type, signal_text, signal_emoji)
     """
     if composite_score > config.SIGNAL_STRONG_BUY:
-        return 'STRONG_BUY', 'STRONG BUY: Sell Put / Buy Call', '🟢'
+        # Strong bullish - aggressive bullish strategies
+        return 'STRONG_BUY', 'SELL PUT / BUY CALL', '🟢'
     elif composite_score > config.SIGNAL_BUY:
-        return 'BUY', 'BUY: Sell Put / Buy Call', '🟢'
-    elif config.SIGNAL_HOLD_MIN <= composite_score <= config.SIGNAL_HOLD_MAX:
-        return 'HOLD', 'HOLD: No Signal', '⚪'
+        # Bullish - standard bullish strategies
+        return 'BUY', 'SELL PUT / BUY CALL', '🟡'
+    elif composite_score > config.SIGNAL_NEUTRAL_BULLISH:
+        # Neutral bullish - conservative bullish strategies
+        return 'NEUTRAL_BULL', 'BULL SPREAD / SELL PUT', '🟡'
+    elif composite_score > config.SIGNAL_NEUTRAL_BEARISH:
+        # Neutral bearish - conservative bearish strategies
+        return 'NEUTRAL_BEAR', 'BEAR SPREAD / BUY PUT', '🟠'
     else:
-        return 'AVOID', 'AVOID: No Bullish Edge', '🔴'
+        # Strong bearish - aggressive bearish strategies
+        return 'STRONG_SELL', 'BUY PUT / SELL CALL', '🔴'
 
 
 def analyze_stock(ticker: str, indicators: Dict) -> Optional[Dict]:
@@ -162,7 +192,8 @@ def analyze_stock(ticker: str, indicators: Dict) -> Optional[Dict]:
             'bb_position': indicators['bollinger']['position'],
             'obv_above_sma': indicators['obv']['above_sma'],
             'atr_value': indicators['atr']['value'],
-            'atr_trend': indicators['atr']['trend']
+            'atr_trend': indicators['atr']['trend'],
+            'volume_relative': indicators.get('volume', {}).get('relative', 1.0)
         }
     }
     

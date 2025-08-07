@@ -9,6 +9,7 @@ import json
 import pickle
 import requests
 import pandas as pd
+import argparse
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from tqdm import tqdm
@@ -551,7 +552,7 @@ class SP500OptionsScanner:
             for error in self.errors:
                 f.write(f"{error['timestamp']}: {error['ticker']} - {error['error']}\n")
     
-    def run_scan(self, skip_breadth=False) -> List[Dict]:
+    def run_scan(self, skip_breadth=False, top_count=None, filter_signals=None, auto_export=False) -> List[Dict]:
         """Run a complete scan of all S&P 500 stocks"""
         scan_time = datetime.now()
         self.errors = []
@@ -596,9 +597,22 @@ class SP500OptionsScanner:
         self.save_results(ranked_analyses, scan_time)
         self.save_error_log()
         
+        # Filter results if specified
+        display_analyses = ranked_analyses
+        if filter_signals:
+            display_analyses = [a for a in ranked_analyses if a['signal']['type'] in filter_signals]
+        
+        # Limit results if specified
+        if top_count:
+            display_analyses = display_analyses[:top_count]
+        
+        # Auto-export if requested
+        if auto_export:
+            self.export_to_csv(display_analyses, scan_time)
+        
         # Display results with market regime status
         self.dashboard.display_results(
-            ranked_analyses, 
+            display_analyses, 
             scan_time, 
             self.errors,
             market_regime_bullish=getattr(self, 'market_regime_bullish', True)
@@ -647,7 +661,32 @@ class SP500OptionsScanner:
                 return False
         return True
     
-    def run_once(self, skip_breadth=False):
+    def export_to_csv(self, analyses: List[Dict], scan_time: datetime):
+        """Export results to CSV file"""
+        if not analyses:
+            return
+        
+        filename = f"options_signals_{scan_time.strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = os.path.join(config.OUTPUT_DIR, filename)
+        
+        data = []
+        for a in analyses:
+            data.append({
+                'Ticker': a['ticker'],
+                'Price': a['current_price'],
+                'Change%': a['price_change_pct'],
+                'Score': a['scores']['composite_score'],
+                'Strategy': a['signal']['text'],
+                'RSI': a['indicators']['rsi'],
+                'MACD_Bullish': a['indicators']['macd_bullish'],
+                'ATR': a['indicators'].get('atr_value', 0)
+            })
+        
+        df = pd.DataFrame(data)
+        df.to_csv(filepath, index=False)
+        logger.info(f"Results exported to {filepath}")
+    
+    def run_once(self, skip_breadth=False, top_count=None, filter_signals=None, auto_export=False):
         """Run a single scan"""
         logger.info("Running single scan...")
         
@@ -656,7 +695,8 @@ class SP500OptionsScanner:
             logger.error("Cannot proceed without data connection")
             return
             
-        analyses = self.run_scan(skip_breadth=skip_breadth)
+        analyses = self.run_scan(skip_breadth=skip_breadth, top_count=top_count, 
+                                filter_signals=filter_signals, auto_export=auto_export)
         
         if analyses:
             self.dashboard.console.print(
@@ -676,34 +716,72 @@ class SP500OptionsScanner:
             )
 
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description='S&P 500 Options Trading Scanner',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  python sp500_options_scanner.py --top 20
+    Show top 20 opportunities
+  
+  python sp500_options_scanner.py --filter STRONG_BUY,BUY
+    Show only STRONG_BUY and BUY signals
+  
+  python sp500_options_scanner.py --top 30 --export
+    Show top 30 and export to CSV
+  
+  python sp500_options_scanner.py --demo --top 5
+    Run in demo mode showing top 5
+        ''')
+    
+    parser.add_argument('--demo', action='store_true', help='Run in demo mode with simulated data')
+    parser.add_argument('--continuous', action='store_true', help='Run continuous scanning with auto-refresh')
+    parser.add_argument('--finnhub', action='store_true', help='Use legacy Finnhub API instead of Alpaca')
+    parser.add_argument('--quick', action='store_true', help='Quick mode using cached data')
+    parser.add_argument('--fast-regime', action='store_true', help='Skip market breadth check for faster results')
+    parser.add_argument('--regime-only', action='store_true', help='Check market regime only and exit')
+    parser.add_argument('--warm-cache', action='store_true', help='Pre-calculate market breadth and cache it')
+    
+    # New arguments for display control
+    parser.add_argument('--top', type=int, metavar='N', help='Show top N results (default: 20)')
+    parser.add_argument('--filter', type=str, metavar='SIGNALS', 
+                       help='Filter by signal types (comma-separated: STRONG_BUY,BUY,HOLD,AVOID)')
+    parser.add_argument('--export', action='store_true', help='Auto-export results to CSV')
+    
+    return parser.parse_args()
+
 def main():
     """Main entry point"""
-    # Check for command line arguments
-    demo_mode = '--demo' in sys.argv
-    continuous_mode = '--continuous' in sys.argv
-    use_finnhub = '--finnhub' in sys.argv  # Option to use legacy Finnhub
-    quick_mode = '--quick' in sys.argv  # Quick mode using cached data
-    fast_regime = '--fast-regime' in sys.argv  # Skip breadth check
-    regime_only = '--regime-only' in sys.argv  # Check regime only
-    warm_cache = '--warm-cache' in sys.argv  # Pre-calculate breadth
+    args = parse_arguments()
+    
+    # Process filter argument
+    filter_signals = None
+    if args.filter:
+        filter_signals = [s.strip() for s in args.filter.split(',')]
+        valid_signals = ['STRONG_BUY', 'BUY', 'HOLD', 'AVOID']
+        filter_signals = [s for s in filter_signals if s in valid_signals]
+        if filter_signals:
+            logger.info(f"Filtering for signals: {', '.join(filter_signals)}")
     
     # Create scanner
     scanner = SP500OptionsScanner(
-        demo_mode=demo_mode,
-        use_alpaca=not use_finnhub,  # Use Alpaca by default
-        quick_mode=quick_mode
+        demo_mode=args.demo,
+        use_alpaca=not args.finnhub,  # Use Alpaca by default
+        quick_mode=args.quick
     )
     
     # Handle special modes
-    if warm_cache:
+    if args.warm_cache:
         logger.info("Warming cache with market breadth calculation...")
         scanner.calculate_market_breadth(show_progress=True)
         logger.info("Cache warmed successfully!")
         return
     
-    if regime_only:
+    if args.regime_only:
         logger.info("Checking market regime only...")
-        is_bullish = scanner.check_market_regime(skip_breadth=fast_regime)
+        is_bullish = scanner.check_market_regime(skip_breadth=args.fast_regime)
         if is_bullish:
             scanner.dashboard.console.print("\n[green]Market regime is BULLISH - conditions favorable for bullish options strategies![/green]")
         else:
@@ -711,10 +789,14 @@ def main():
             scanner.dashboard.console.print("[dim]Scanner will still run but with caution warnings when regime is not bullish.[/dim]")
         return
     
-    if continuous_mode:
+    # Determine top count (default to 20 if not specified)
+    top_count = args.top if args.top else 20
+    
+    if args.continuous:
         scanner.run_continuous()
     else:
-        scanner.run_once(skip_breadth=fast_regime)
+        scanner.run_once(skip_breadth=args.fast_regime, top_count=top_count, 
+                        filter_signals=filter_signals, auto_export=args.export)
 
 
 if __name__ == "__main__":

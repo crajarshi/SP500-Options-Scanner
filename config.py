@@ -59,16 +59,21 @@ DEFENSIVE_MODE_ENABLED = False  # Future feature flag
 RSI_OVERSOLD = 30
 RSI_OVERBOUGHT = 70
 
-# Scoring weights
-WEIGHT_RSI = 0.30  # 30%
-WEIGHT_MACD = 0.30  # 30%
+# Scoring weights (must sum to 1.0)
+WEIGHT_RSI = 0.25  # 25%
+WEIGHT_MACD = 0.25  # 25%
 WEIGHT_BOLLINGER = 0.20  # 20%
-WEIGHT_OBV = 0.10  # 10% (reduced from 20%)
-WEIGHT_ATR = 0.10  # 10% (new)
+WEIGHT_OBV = 0.10  # 10%
+WEIGHT_VOLUME = 0.10  # 10% (relative volume)
+WEIGHT_ATR = 0.10  # 10% (volatility expansion)
 
-# Signal thresholds
-SIGNAL_STRONG_BUY = 85
-SIGNAL_BUY = 70
+# Signal thresholds (5 categories for nuanced strategies)
+SIGNAL_STRONG_BUY = 85  # > 85: Strong bullish
+SIGNAL_BUY = 70  # 70-85: Bullish
+SIGNAL_NEUTRAL_BULLISH = 50  # 50-70: Neutral bullish
+SIGNAL_NEUTRAL_BEARISH = 30  # 30-50: Neutral bearish
+SIGNAL_STRONG_SELL = 30  # < 30: Strong bearish
+# Legacy compatibility
 SIGNAL_HOLD_MIN = 30
 SIGNAL_HOLD_MAX = 70
 
@@ -93,7 +98,7 @@ DECIMAL_PLACES = 1  # For score display
 
 # Dashboard settings
 REFRESH_INTERVAL_MINUTES = 30  # Auto-refresh interval
-TOP_STOCKS_DISPLAY = 10  # Number of top stocks to show
+TOP_STOCKS_DISPLAY = 20  # Number of top stocks to show (increased to show more opportunities)
 SHOW_DETAILED_INDICATORS = True  # Show individual indicator values
 
 # Console colors (for rich library)

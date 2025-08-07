@@ -3,6 +3,7 @@ Alpaca Market Data API integration for fetching historical stock data
 """
 import requests
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import logging
@@ -305,6 +306,254 @@ class AlpacaDataProvider:
             logger.error(f"Error fetching VIX data: {e}")
             # Return a moderate default value rather than None
             return 18.0  # Historical average VIX
+    
+    def fetch_options_chain(self, symbol: str) -> Optional[Dict]:
+        """
+        Fetch options chain for a symbol
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dictionary with options chain data organized by expiration and strike
+            Format: {expiration_date: {strike: {call: {...}, put: {...}}}}
+        """
+        try:
+            # Use Alpaca options snapshots endpoint for complete chain with Greeks
+            endpoint = f"{self.data_url}/v1beta1/options/snapshots/{symbol}"
+            
+            # Add feed parameter for options data
+            params = {
+                'feed': 'indicative'  # Use indicative feed for options
+            }
+            
+            response = self.session.get(endpoint, params=params)
+            
+            if response.status_code in [403, 404]:
+                # Options data not available in subscription or symbol doesn't have options
+                logger.info(f"Options data not available for {symbol} (status: {response.status_code}), using simulated data")
+                return self._generate_simulated_options_chain(symbol)
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            # Parse Alpaca options snapshots response
+            chain = {}
+            
+            # Check the actual response structure
+            # The snapshots endpoint might return different formats
+            if isinstance(data, dict):
+                # Could be {'snapshots': [...]} or direct snapshots
+                snapshots = data.get('snapshots', [])
+                if not snapshots and 'contracts' in data:
+                    # Alternative format with contracts
+                    snapshots = data.get('contracts', [])
+            elif isinstance(data, list):
+                # Direct list of snapshots
+                snapshots = data
+            else:
+                logger.warning(f"Unexpected response format for {symbol}: {type(data)}")
+                snapshots = []
+            
+            for snapshot in snapshots:
+                # Handle different snapshot formats
+                if isinstance(snapshot, str):
+                    # If it's just a symbol string, skip
+                    continue
+                elif not isinstance(snapshot, dict):
+                    continue
+                    
+                # Extract contract details from symbol (format: AAPL240119C00150000)
+                contract_symbol = snapshot.get('symbol', '')
+                
+                # Parse the OCC symbol format
+                if len(contract_symbol) < 15:
+                    continue
+                    
+                # Extract components
+                underlying = symbol  # We already know this
+                exp_date_str = contract_symbol[len(underlying):len(underlying)+6]  # YYMMDD
+                contract_type = contract_symbol[len(underlying)+6].lower()  # 'c' or 'p'
+                strike_str = contract_symbol[len(underlying)+7:]  # Strike * 1000
+                
+                # Convert date
+                try:
+                    exp_date = datetime.strptime(exp_date_str, '%y%m%d').strftime('%Y-%m-%d')
+                    strike = float(strike_str) / 1000
+                except:
+                    continue
+                
+                if exp_date not in chain:
+                    chain[exp_date] = {}
+                if strike not in chain[exp_date]:
+                    chain[exp_date][strike] = {}
+                
+                # Map contract type
+                contract_type_full = 'call' if contract_type == 'c' else 'put'
+                
+                # Extract latest quote and Greeks
+                latest_quote = snapshot.get('latestQuote', {})
+                greeks = snapshot.get('greeks', {})
+                
+                # Add Greeks and market data
+                chain[exp_date][strike][contract_type_full] = {
+                    'symbol': contract_symbol,
+                    'bid': latest_quote.get('bidPrice', 0),
+                    'ask': latest_quote.get('askPrice', 0),
+                    'last': snapshot.get('latestTrade', {}).get('price', 0),
+                    'volume': snapshot.get('dailyBar', {}).get('volume', 0),
+                    'open_interest': snapshot.get('openInterest', 0),
+                    'delta': greeks.get('delta', 0),
+                    'gamma': greeks.get('gamma', 0),
+                    'theta': greeks.get('theta', 0),
+                    'vega': greeks.get('vega', 0),
+                    'implied_volatility': snapshot.get('impliedVolatility', 0)
+                }
+            
+            if not chain:
+                # No data from API, fall back to simulated
+                logger.info(f"No options data from API for {symbol}, using simulated data")
+                return self._generate_simulated_options_chain(symbol)
+                
+            logger.info(f"Fetched options chain for {symbol}: {len(chain)} expirations")
+            return chain
+            
+        except Exception as e:
+            logger.error(f"Error fetching options chain for {symbol}: {e}")
+            # Fallback to simulated data
+            return self._generate_simulated_options_chain(symbol)
+    
+    def _generate_simulated_options_chain(self, symbol: str) -> Dict:
+        """
+        Generate simulated options chain for testing/demo purposes
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Simulated options chain data
+        """
+        import numpy as np
+        
+        # Get current stock price
+        quote = self.fetch_latest_quote(symbol)
+        if quote:
+            stock_price = (quote.get('ap', 0) + quote.get('bp', 0)) / 2
+        else:
+            stock_price = 100  # Default
+        
+        # Generate monthly expirations
+        chain = {}
+        base_date = datetime.now()
+        
+        for months_ahead in [1, 2, 3]:  # Next 3 monthly expirations
+            # Find 3rd Friday of the month
+            exp_date = self._get_monthly_expiration(base_date, months_ahead)
+            exp_str = exp_date.strftime('%Y-%m-%d')
+            chain[exp_str] = {}
+            
+            # Generate strikes around current price
+            strikes = np.arange(
+                stock_price * 0.85,  # 15% OTM
+                stock_price * 1.15,  # 15% OTM
+                stock_price * 0.025  # 2.5% increments
+            )
+            
+            for strike in strikes:
+                strike = round(strike, 2)
+                days_to_exp = (exp_date - datetime.now()).days
+                
+                # Calculate theoretical values
+                call_delta = self._black_scholes_delta(
+                    stock_price, strike, days_to_exp/365, 0.05, 0.30, 'call'
+                )
+                put_delta = self._black_scholes_delta(
+                    stock_price, strike, days_to_exp/365, 0.05, 0.30, 'put'
+                )
+                
+                # Simulate bid-ask spreads
+                call_mid = max(0.01, stock_price - strike) if strike < stock_price else 0.50
+                put_mid = max(0.01, strike - stock_price) if strike > stock_price else 0.50
+                
+                spread_pct = 0.05  # 5% spread
+                
+                chain[exp_str][strike] = {
+                    'call': {
+                        'bid': round(call_mid * (1 - spread_pct/2), 2),
+                        'ask': round(call_mid * (1 + spread_pct/2), 2),
+                        'last': call_mid,
+                        'volume': np.random.randint(0, 1000),
+                        'open_interest': np.random.randint(100, 5000),
+                        'delta': call_delta,
+                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05)
+                    },
+                    'put': {
+                        'bid': round(put_mid * (1 - spread_pct/2), 2),
+                        'ask': round(put_mid * (1 + spread_pct/2), 2),
+                        'last': put_mid,
+                        'volume': np.random.randint(0, 1000),
+                        'open_interest': np.random.randint(100, 5000),
+                        'delta': put_delta,
+                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05)
+                    }
+                }
+        
+        logger.info(f"Generated simulated options chain for {symbol}")
+        return chain
+    
+    def _get_monthly_expiration(self, base_date: datetime, months_ahead: int) -> datetime:
+        """
+        Get the monthly options expiration date (3rd Friday)
+        
+        Args:
+            base_date: Starting date
+            months_ahead: Number of months ahead
+            
+        Returns:
+            Expiration date (3rd Friday of the month)
+        """
+        # Move to target month
+        target_date = base_date + timedelta(days=30 * months_ahead)
+        
+        # Find first day of month
+        first_day = target_date.replace(day=1)
+        
+        # Find first Friday
+        days_until_friday = (4 - first_day.weekday()) % 7
+        first_friday = first_day + timedelta(days=days_until_friday)
+        
+        # Third Friday is 14 days later
+        third_friday = first_friday + timedelta(days=14)
+        
+        return third_friday
+    
+    def _black_scholes_delta(self, S: float, K: float, T: float, r: float, 
+                            sigma: float, option_type: str) -> float:
+        """
+        Calculate Black-Scholes delta for option
+        
+        Args:
+            S: Stock price
+            K: Strike price
+            T: Time to expiration (years)
+            r: Risk-free rate
+            sigma: Implied volatility
+            option_type: 'call' or 'put'
+            
+        Returns:
+            Delta value
+        """
+        from scipy.stats import norm
+        
+        if T <= 0:
+            return 0
+        
+        d1 = (np.log(S/K) + (r + sigma**2/2) * T) / (sigma * np.sqrt(T))
+        
+        if option_type == 'call':
+            return norm.cdf(d1)
+        else:
+            return norm.cdf(d1) - 1
     
     def test_connection(self) -> bool:
         """

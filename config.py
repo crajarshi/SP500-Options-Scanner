@@ -114,6 +114,25 @@ WATCHLIST_DIR = 'watchlists'  # Default directory for watchlist files
 WATCHLIST_CACHE_ENABLED = True  # Use cache for watchlist stocks
 WATCHLIST_OUTPUT_DIR = 'output/watchlist_scans'  # Separate output directory for watchlist scans
 
+# Options Contract Selection
+OPTIONS_TARGET_DAYS = 45  # Target expiration (sweet spot)
+OPTIONS_MIN_DAYS = 30     # Minimum days to expiration
+OPTIONS_MAX_DAYS = 60     # Maximum days to expiration
+OPTIONS_CALL_DELTA = 0.70  # Target delta for calls (slightly ITM)
+OPTIONS_PUT_DELTA = -0.70  # Target delta for puts (slightly ITM)
+OPTIONS_NEUTRAL_DELTA = 0.50  # Target delta for neutral/ATM contracts
+
+# Liquidity Requirements (Configurable)
+OPTIONS_MIN_OPEN_INTEREST = 100   # Minimum open interest for liquidity
+OPTIONS_MAX_SPREAD_PERCENT = 0.10  # Maximum 10% bid-ask spread
+
+# API Settings
+OPTIONS_CACHE_MINUTES = 10  # Cache options data for 10 minutes
+OPTIONS_API_DELAY = 0.5     # Delay between API calls in seconds
+
+# Display Settings
+OPTIONS_MAX_DISPLAY = 10    # Maximum contracts to display in panel
+
 # Console colors (for rich library)
 COLOR_STRONG_BUY = 'bright_green'
 COLOR_BUY = 'green'

@@ -23,6 +23,7 @@ from signals import analyze_stock, rank_stocks
 from dashboard import OptionsScannnerDashboard
 from demo_data_generator import generate_demo_intraday_data, get_demo_sp500_tickers
 from alpaca_data_provider import AlpacaDataProvider
+from options_chain import OptionsChainAnalyzer
 
 # Set up logging
 logging.basicConfig(
@@ -40,7 +41,7 @@ class SP500OptionsScanner:
     """Main scanner class"""
     
     def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False, scanner_mode='adaptive', 
-                 watchlist_file=None, skip_regime=False):
+                 watchlist_file=None, skip_regime=False, fetch_options=False):
         self.dashboard = OptionsScannnerDashboard()
         self.session = requests.Session()
         self.errors = []
@@ -54,13 +55,22 @@ class SP500OptionsScanner:
         self.watchlist_file = watchlist_file
         self.skip_regime = skip_regime
         self.invalid_tickers = []  # Track invalid tickers from watchlist
+        self.fetch_options = fetch_options
         
         # Initialize data provider
         if self.use_alpaca and not self.demo_mode:
             self.data_provider = AlpacaDataProvider()
             logger.info("Using Alpaca Market Data API")
+            
+            # Initialize options analyzer if requested
+            if self.fetch_options:
+                self.options_analyzer = OptionsChainAnalyzer(self.data_provider)
+                logger.info("Options contract recommendations enabled")
+            else:
+                self.options_analyzer = None
         else:
             self.data_provider = None
+            self.options_analyzer = None
             self.api_key = config.FINNHUB_API_KEY
             
         # Set up signal handler for graceful shutdown
@@ -396,7 +406,6 @@ class SP500OptionsScanner:
         # Save to CSV with appropriate naming
         if scan_type == 'watchlist' and self.watchlist_file:
             # Extract watchlist name without extension
-            import os
             watchlist_name = os.path.splitext(os.path.basename(self.watchlist_file))[0]
             filename = f"{watchlist_name}_scan_{scan_time.strftime('%Y-%m-%d_%H%M')}.csv"
             output_dir = config.WATCHLIST_OUTPUT_DIR
@@ -667,6 +676,65 @@ class SP500OptionsScanner:
             }
             return True
     
+    def add_options_recommendations(self, analyses: List[Dict], scan_type: str = 'sp500'):
+        """
+        Add options contract recommendations to analysis results
+        
+        Args:
+            analyses: List of top stock analyses
+            scan_type: 'watchlist' or 'sp500' - determines filtering logic
+        """
+        if not self.options_analyzer:
+            return
+        
+        # Determine which stocks to process based on scan type
+        if scan_type == 'watchlist':
+            # For watchlist: fetch options for ALL displayed stocks
+            stocks_to_process = analyses
+            logger.info(f"Watchlist mode: Fetching options for all {len(stocks_to_process)} stocks")
+        else:
+            # For S&P 500: only actionable signals
+            actionable_signals = ['STRONG_BUY', 'BUY', 'STRONG_SELL', 'SELL']
+            stocks_to_process = [a for a in analyses if a['signal']['type'] in actionable_signals]
+            
+            if not stocks_to_process:
+                logger.info("No actionable signals found for options recommendations")
+                return
+            
+            logger.info(f"S&P 500 mode: Fetching options for {len(stocks_to_process)} stocks with actionable signals")
+        
+        # Process stocks (limit to prevent excessive API calls)
+        max_stocks = 10 if scan_type == 'watchlist' else 5
+        for analysis in stocks_to_process[:max_stocks]:
+            try:
+                ticker = analysis['ticker']
+                signal_type = analysis['signal']['type']
+                stock_price = analysis['current_price']
+                
+                logger.info(f"Fetching options for {ticker} ({signal_type})")
+                
+                # Get optimal contracts
+                contracts = self.options_analyzer.get_optimal_contracts(
+                    ticker, signal_type, stock_price
+                )
+                
+                if contracts:
+                    # Add to analysis
+                    analysis['options_contracts'] = [c.to_dict() for c in contracts]
+                    
+                    # Log recommendations
+                    recommendation = self.options_analyzer.format_recommendation(
+                        ticker, contracts, signal_type, stock_price
+                    )
+                    logger.info(recommendation)
+                else:
+                    analysis['options_contracts'] = []
+                    logger.info(f"No liquid options found for {ticker}")
+                    
+            except Exception as e:
+                logger.error(f"Error fetching options for {analysis['ticker']}: {e}")
+                analysis['options_contracts'] = []
+    
     def save_error_log(self):
         """Save error log"""
         if not self.errors:
@@ -750,6 +818,12 @@ class SP500OptionsScanner:
         # Limit results if specified
         if top_count:
             display_analyses = display_analyses[:top_count]
+        
+        # Fetch options recommendations if requested
+        if self.fetch_options and self.options_analyzer:
+            logger.info("Fetching options contract recommendations for top stocks...")
+            # Pass scan_type to determine filtering logic
+            self.add_options_recommendations(display_analyses, scan_type)
         
         # Auto-export if requested
         if auto_export:
@@ -927,6 +1001,11 @@ Examples:
                        action='store_true',
                        help='Skip market regime check for faster results')
     
+    # Options recommendations
+    parser.add_argument('--options',
+                       action='store_true',
+                       help='Include specific options contract recommendations')
+    
     return parser.parse_args()
 
 def main():
@@ -954,7 +1033,8 @@ def main():
         quick_mode=args.quick,
         scanner_mode=scanner_mode,
         watchlist_file=args.watchlist,
-        skip_regime=args.no_regime
+        skip_regime=args.no_regime,
+        fetch_options=args.options
     )
     
     # Handle special modes

@@ -342,6 +342,9 @@ class OptionsScannnerDashboard:
             self.console.print(self.create_results_table(analyses, scan_type=scan_type,
                                                         watchlist_file=watchlist_file))
         
+        # Display options recommendations if available
+        self.display_options_recommendations(analyses)
+        
         # Display footer
         self.console.print(self.create_footer())
         
@@ -350,6 +353,74 @@ class OptionsScannnerDashboard:
             error_text = f"\n[yellow]⚠ Skipped {len(errors)} stocks due to errors. "
             error_text += "See logs/error_log.txt for details.[/yellow]"
             self.console.print(error_text)
+    
+    def display_options_recommendations(self, analyses: List[Dict]):
+        """Display options contract recommendations if available"""
+        # Check if any analyses have options data
+        stocks_with_options = [a for a in analyses if a.get('options_contracts')]
+        
+        if not stocks_with_options:
+            return
+        
+        # Create options recommendations panel
+        self.console.print("\n")
+        self.console.print(Panel(
+            "[bold cyan]📊 OPTIONS CONTRACT RECOMMENDATIONS[/bold cyan]",
+            box=box.DOUBLE,
+            border_style="cyan"
+        ))
+        
+        for analysis in stocks_with_options[:5]:  # Show top 5 only for space
+            ticker = analysis['ticker']
+            signal = analysis['signal']['type']  # Use signal TYPE not text
+            contracts = analysis['options_contracts']
+            
+            if not contracts:
+                continue
+            
+            # Create a table for this stock's options
+            table = Table(
+                title=f"[bold cyan]{ticker}[/bold cyan] @ ${analysis['current_price']:.2f} - {signal}",
+                box=box.ROUNDED,
+                show_lines=True,
+                title_style="bold white",
+                show_header=True,
+                header_style="bold"
+            )
+            
+            # Add columns - INCLUDING SYMBOL
+            table.add_column("Symbol", style="bold cyan", width=6)
+            table.add_column("Strike", style="white", width=8)
+            table.add_column("Exp", style="white", width=10)
+            table.add_column("Type", style="white", width=5)
+            table.add_column("Delta", style="yellow", width=6)
+            table.add_column("Bid/Ask", style="white", width=12)
+            table.add_column("Spread", style="white", width=7)
+            table.add_column("OI", style="green", width=8)
+            table.add_column("Liq", style="magenta", width=5)
+            
+            # Add rows for each contract
+            for contract in contracts[:3]:  # Top 3 contracts
+                spread_color = "green" if contract['spread%'] < 5 else "yellow" if contract['spread%'] < 10 else "red"
+                liquidity_color = "green" if contract['liquidity'] > 70 else "yellow" if contract['liquidity'] > 50 else "red"
+                
+                table.add_row(
+                    ticker,  # Add ticker symbol
+                    f"${contract['strike']:.2f}",
+                    contract['expiration'],
+                    contract['type'],
+                    f"{contract['delta']:.2f}",
+                    f"${contract['bid']:.2f}/${contract['ask']:.2f}",
+                    Text(f"{contract['spread%']:.1f}%", style=spread_color),
+                    f"{contract['OI']:,}",
+                    Text(f"{contract['liquidity']:.0f}", style=liquidity_color)
+                )
+            
+            self.console.print(table)
+        
+        # Add explanation
+        self.console.print("\n[dim]💡 Recommendations based on: Delta targeting (0.70/-0.70), "
+                          "30-60 day expiration, minimum 100 OI, max 10% spread[/dim]")
     
     def display_progress(self, current: int, total: int, ticker: str = ""):
         """Display progress bar"""

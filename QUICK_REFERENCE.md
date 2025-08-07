@@ -25,8 +25,12 @@ python sp500_options_scanner.py --mode adaptive  # Default
 python sp500_options_scanner.py --mode bullish   # Force bullish
 python sp500_options_scanner.py --mode bearish   # Force bearish
 
+# Options recommendations (NEW!)
+python sp500_options_scanner.py --options  # Include specific contract recommendations
+python sp500_options_scanner.py --watchlist my_stocks.txt --options --top 10
+
 # Combine modes
-python sp500_options_scanner.py --watchlist tech.txt --mode bearish --top 10
+python sp500_options_scanner.py --watchlist tech.txt --mode bearish --top 10 --options
 ```
 
 ## 📊 Reading the Console Output
@@ -224,6 +228,46 @@ During continuous mode:
 - **Q**: Quit scanner
 - **Ctrl+C**: Emergency stop
 
+## 📊 Options Contract Recommendations (NEW!)
+
+### Using the --options Flag
+```bash
+# Basic options recommendations
+python sp500_options_scanner.py --options
+
+# With watchlist and top 10
+python sp500_options_scanner.py --watchlist my_stocks.txt --options --top 10
+
+# Quick scan with options
+python sp500_options_scanner.py --quick --options
+```
+
+### Options Display Shows:
+- **Strike**: Recommended strike price (slightly ITM for delta 0.70)
+- **Exp**: Expiration date (30-60 days out, monthly preferred)
+- **Type**: CALL or PUT based on signal
+- **Delta**: Target 0.70 for calls, -0.70 for puts
+- **Bid/Ask**: Current market prices
+- **Spread**: Bid-ask spread percentage (< 10% required)
+- **OI**: Open interest (minimum 100 for liquidity)
+- **Liquidity**: Score 0-100 based on spread and OI
+
+### Options Selection Criteria:
+1. **Expiration Window**: 30-60 days (monthly expirations preferred)
+2. **Delta Targeting**: 0.70 for calls, -0.70 for puts (slightly ITM)
+3. **Liquidity Requirements**:
+   - Minimum 100 open interest
+   - Maximum 10% bid-ask spread
+   - Relaxed to 50 OI and 15% spread if needed
+4. **Signal Mapping**:
+   - STRONG_BUY/BUY → Call options
+   - STRONG_SELL/SELL → Put options
+   - NEUTRAL → No recommendations
+
+### Two-Phase Approach:
+1. **Phase 1 (No --options flag)**: Quick scan showing opportunities
+2. **Phase 2 (With --options flag)**: Detailed scan with specific contracts
+
 ## 💡 Pro Tips
 
 1. **Morning Scan**: Best opportunities often appear 30-60 min after open
@@ -231,6 +275,8 @@ During continuous mode:
 3. **Score Threshold**: Only trade scores > 70 for higher probability
 4. **Market First**: Always check market regime before individual stocks
 5. **Quick Mode**: Use for rapid strategy testing without API delays
+6. **Options Liquidity**: Always verify OI and spread before trading
+7. **Two-Step Process**: Run quick scan first, then --options for top picks
 
 ---
-*Last Updated: Version 2.0 - Options Trading Enhanced*
+*Last Updated: Version 3.0 - Options Contract Recommendations Added*

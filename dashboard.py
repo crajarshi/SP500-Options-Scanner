@@ -83,7 +83,7 @@ class OptionsScannnerDashboard:
         elif indicator == "OBV":
             return f"OBV:{'✓' if positive else '✗'}"
     
-    def create_header(self, scan_time: datetime, next_scan: datetime) -> Panel:
+    def create_header(self, scan_time: datetime, next_scan: datetime, market_regime_bullish: bool = True) -> Panel:
         """Create dashboard header"""
         market_status, current_time = self.get_market_status()
         status_color = "green" if market_status == "OPEN" else "yellow"
@@ -93,11 +93,17 @@ class OptionsScannnerDashboard:
         minutes_until = int(time_until_next.total_seconds() / 60)
         seconds_until = int(time_until_next.total_seconds() % 60)
         
+        # Add regime warning if not bullish
+        regime_text = ""
+        if not market_regime_bullish:
+            regime_text = "\n[yellow]⚠️  MARKET REGIME: NOT BULLISH - Exercise Caution[/yellow]"
+        
         header_text = (
             f"[bold white]S&P 500 Intraday Options Scanner[/bold white]\n\n"
             f"Market Status: [{status_color}]{market_status}[/{status_color}]    "
             f"Time: {current_time}    "
             f"Next Scan: {minutes_until:02d}:{seconds_until:02d}"
+            f"{regime_text}"
         )
         
         return Panel(
@@ -257,7 +263,8 @@ class OptionsScannnerDashboard:
     
     def display_results(self, analyses: List[Dict], 
                        scan_time: datetime,
-                       errors: List[Dict] = None):
+                       errors: List[Dict] = None,
+                       market_regime_bullish: bool = True):
         """Display full dashboard"""
         self.console.clear()
         
@@ -267,7 +274,7 @@ class OptionsScannnerDashboard:
         # Create layout with scoring explanation
         layout = Layout()
         layout.split_column(
-            Layout(self.create_header(scan_time, next_scan), size=5),
+            Layout(self.create_header(scan_time, next_scan, market_regime_bullish), size=6 if not market_regime_bullish else 5),
             Layout(self.create_scoring_explanation(), size=12),
             Layout(self.create_results_table(analyses), size=20),
             Layout(self.create_footer(), size=3)

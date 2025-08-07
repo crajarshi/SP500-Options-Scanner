@@ -1,5 +1,5 @@
 ==============================================================
-     S&P 500 OPTIONS SCANNER - STEP-BY-STEP INSTRUCTIONS
+     S&P 500 OPTIONS SCANNER - COMPLETE RUNNING GUIDE
 ==============================================================
 
 STEP 1: OPEN TERMINAL
@@ -25,48 +25,194 @@ python sp500_options_scanner.py
 STEP 5: WAIT FOR RESULTS
 ------------------------
 The scanner will:
-1. Connect to Alpaca (2 seconds)
-2. Fetch S&P 500 list (3 seconds)
-3. Analyze each stock (45-60 seconds)
-4. Display top opportunities
-5. Save results to CSV file
+1. Check market regime (3 factors) - 5 seconds
+2. Connect to Alpaca - 2 seconds
+3. Fetch S&P 500 list - 3 seconds
+4. Analyze each stock - 45-60 seconds
+5. Display comprehensive results
+6. Save to CSV file
 
 ==============================================================
-                    RUNNING OPTIONS
+                 ALL RUNNING OPTIONS
 ==============================================================
 
-NORMAL RUN (with real market data):
+STANDARD SCAN (with market regime check):
 python sp500_options_scanner.py
 
-DEMO MODE (no API needed):
+DEMO MODE (no API needed, skips market check):
 python sp500_options_scanner.py --demo
 
-CONTINUOUS MODE (auto-refresh):
+QUICK MODE (uses cached data for speed):
+python sp500_options_scanner.py --quick
+
+REGIME CHECK ONLY (no scan):
+python sp500_options_scanner.py --regime-only
+
+FAST REGIME (skip breadth calculation):
+python sp500_options_scanner.py --fast-regime
+
+WARM CACHE (pre-calculate market breadth):
+python sp500_options_scanner.py --warm-cache
+
+CONTINUOUS MODE (auto-refresh every 30 min):
 python sp500_options_scanner.py --continuous
 
-DEMO + CONTINUOUS:
+COMBINATIONS:
 python sp500_options_scanner.py --demo --continuous
+python sp500_options_scanner.py --regime-only --fast-regime
+python sp500_options_scanner.py --quick --continuous
 
 ==============================================================
-                    EXPECTED OUTPUT
+                  EXPECTED OUTPUT - NEW FORMAT
 ==============================================================
 
-You will see:
-1. "Testing Alpaca connection..." ✓
-2. Progress bar: [████████░░░] 225/503
-3. Results table with top stocks
-4. Signal counts summary
+1. MARKET REGIME CHECK (First Thing You See):
+============================================================
+MARKET REGIME ANALYSIS
+============================================================
+📊 SPY Trend:      ✅ $450.25 > $445.30 (+1.1%)
+📈 Market Breadth: ✅ 65.2% stocks > 50MA
+😨 VIX Level:      ✅ 18.5 (below 25)
+============================================================
+✅ MARKET REGIME: BULLISH (3/3 factors positive)
+Proceeding with bullish opportunity scan...
 
-Results are saved in:
-- output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv
+2. PROGRESS BAR:
+Scanning: 45%|████████████░░░░░| 225/503 [00:21<00:26]
+
+3. ENHANCED DASHBOARD:
+╔═══════════════════════════════════════════════════════╗
+║      S&P 500 Intraday Options Scanner                 ║
+║                                                        ║
+║   Market Status: OPEN    Time: 10:45 AM ET            ║
+╚═══════════════════════════════════════════════════════╝
+
+╭─────────── 📈 How Scoring Works ──────────────────────╮
+│                                                        │
+│ Scoring System Breakdown:                             │
+│                                                        │
+│ 📊 Composite Score =                                  │
+│    MACD (30%) + RSI (30%) + Bollinger (20%) +        │
+│    OBV (10%) + ATR (10%)                             │
+│                                                        │
+│ Individual Indicators:                                │
+│ • RSI: 100pts if oversold (<30)                      │
+│ • MACD: 100pts if bullish crossover                  │
+│ • Bollinger: 100pts at lower band                    │
+│ • OBV: 100pts if above 20-SMA                        │
+│ • ATR: 100pts if expanding                           │
+│                                                        │
+│ Signal Thresholds:                                    │
+│ • STRONG BUY: Score > 85                             │
+│ • BUY: Score 70-85                                   │
+│ • HOLD: Score 30-70                                  │
+│ • AVOID: Score < 30                                  │
+╰────────────────────────────────────────────────────────╯
+
+TOP OPTIONS TRADING SIGNALS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Rank Ticker Price   Chg%  Score RSI MACD BB OBV ATR Vol$  Signal
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1    AAPL  $175.32 -2.1%  92.5 100 100  85 100 100 $3.4↑ STRONG BUY
+2    MSFT  $382.15 -1.8%  78.5  75 100  70 100   0 $5.2↓ BUY
+3    NVDA  $695.20 -3.2%  55.0  50   0  50 100 100 $12↑  HOLD
+4    TSLA  $242.18 +1.5%  25.0   0   0  10   0   0 $8.7↓ AVOID
+
+Color Legend:
+• Green (80-100): Strong signal
+• Yellow (1-79): Moderate signal
+• Red (0): No signal
+• ↑ = Volatility expanding (good for buying options)
+• ↓ = Volatility contracting (good for selling options)
+
+4. SUMMARY:
+✓ Scan complete. Found 489 stocks with valid data.
+Strong Buy signals: 3 | Buy signals: 35
+
+Results saved to: output/intraday_scans/sp500_scan_2025-08-06_1045.csv
 
 ==============================================================
-                      NEED HELP?
+              UNDERSTANDING THE OUTPUT
 ==============================================================
 
-If you see errors:
-1. Make sure venv is activated (see (venv) in terminal)
-2. Try demo mode first: python sp500_options_scanner.py --demo
-3. Check logs/error_log.txt for details
+MARKET REGIME (Must Pass All 3):
+• SPY > 50-day MA ✅ = Bullish trend
+• >60% stocks > 50MA ✅ = Strong breadth
+• VIX < 25 ✅ = Low fear
+
+INDIVIDUAL SCORES (0-100):
+• RSI: Momentum indicator
+• MACD: Trend strength
+• BB: Price position in bands
+• OBV: Volume confirmation
+• ATR: Volatility expansion
+
+COMPOSITE SCORE:
+• Weighted average of all indicators
+• Higher = Stronger bullish signal
+• >85 = High conviction trade
+
+VOLATILITY (Vol$):
+• ↑ = Expanding (buy options)
+• ↓ = Contracting (sell options)
+
+==============================================================
+                  TROUBLESHOOTING
+==============================================================
+
+ERROR: "Market Regime is NOT BULLISH"
+→ Market conditions unfavorable, scanner halts
+→ Try: python sp500_options_scanner.py --demo
+
+ERROR: "ModuleNotFoundError"
+→ Virtual environment not activated
+→ Run: source venv/bin/activate
+
+ERROR: "Rate limit exceeded"
+→ Too many API calls
+→ Try: python sp500_options_scanner.py --quick
+
+SLOW PERFORMANCE:
+→ Use quick mode: python sp500_options_scanner.py --quick
+→ Skip breadth: python sp500_options_scanner.py --fast-regime
+
+==============================================================
+                    OUTPUT FILES
+==============================================================
+
+CSV RESULTS:
+output/intraday_scans/sp500_scan_YYYY-MM-DD_HHMM.csv
+
+Contains:
+- All stock scores and indicators
+- Individual indicator scores
+- ATR values and trends
+- Signal recommendations
+
+ERROR LOG:
+logs/error_log.txt
+
+SCANNER LOG:
+logs/scanner.log
+
+==============================================================
+                     QUICK TIPS
+==============================================================
+
+1. Run market check first:
+   python sp500_options_scanner.py --regime-only
+
+2. For testing without API:
+   python sp500_options_scanner.py --demo
+
+3. For faster scans:
+   python sp500_options_scanner.py --quick
+
+4. Pre-calculate breadth overnight:
+   python sp500_options_scanner.py --warm-cache
+
+5. Best time to run:
+   - 30-60 minutes after market open
+   - 1 hour before market close
 
 ==============================================================

@@ -519,18 +519,18 @@ class SP500OptionsScanner:
             if is_bullish:
                 self.dashboard.console.print(
                     f"[green]✅ MARKET REGIME: BULLISH ({factors_passed}/{total_factors} factors positive)[/green]\n"
-                    f"[green]Proceeding with bullish opportunity scan...[/green]"
+                    f"[green]Market conditions favorable for bullish strategies.[/green]"
                 )
                 return True
             else:
                 self.dashboard.console.print(
-                    f"[red]❌ MARKET REGIME: NOT BULLISH ({factors_passed}/{total_factors} factors positive)[/red]\n"
-                    f"[red]Halting bullish scan.[/red]"
+                    f"[yellow]⚠️  MARKET REGIME: NOT BULLISH ({factors_passed}/{total_factors} factors positive)[/yellow]\n"
+                    f"[yellow]Market conditions not ideal for bullish strategies.[/yellow]"
                 )
                 if config.DEFENSIVE_MODE_ENABLED:
-                    self.dashboard.console.print("[yellow]🛡️ Consider switching to defensive mode (future feature)[/yellow]")
+                    self.dashboard.console.print("[yellow]🛡️ Consider defensive strategies (puts, hedges)[/yellow]")
                 else:
-                    self.dashboard.console.print("[yellow]💡 Tip: Consider defensive strategies or wait for better conditions[/yellow]")
+                    self.dashboard.console.print("[yellow]💡 Tip: Reduce position sizes or consider defensive strategies[/yellow]")
                 return False
                 
         except Exception as e:
@@ -555,12 +555,17 @@ class SP500OptionsScanner:
         """Run a complete scan of all S&P 500 stocks"""
         scan_time = datetime.now()
         self.errors = []
+        self.market_regime_bullish = True  # Track regime status
         
-        # Check market regime first
+        # Check market regime first (but don't halt scan)
         if not self.demo_mode:  # Skip market check in demo mode
-            if not self.check_market_regime(skip_breadth=skip_breadth):
-                # Market is not bullish, halt scan
-                return []
+            self.market_regime_bullish = self.check_market_regime(skip_breadth=skip_breadth)
+            if not self.market_regime_bullish:
+                # Market is not bullish, but continue with warning
+                self.dashboard.console.print(
+                    "\n[yellow]⚠️  WARNING: Market regime is NOT bullish. "
+                    "Proceeding with scan but exercise caution with bullish strategies.[/yellow]\n"
+                )
         
         # Get S&P 500 tickers
         self.dashboard.display_success("Fetching S&P 500 constituents...")
@@ -591,8 +596,13 @@ class SP500OptionsScanner:
         self.save_results(ranked_analyses, scan_time)
         self.save_error_log()
         
-        # Display results
-        self.dashboard.display_results(ranked_analyses, scan_time, self.errors)
+        # Display results with market regime status
+        self.dashboard.display_results(
+            ranked_analyses, 
+            scan_time, 
+            self.errors,
+            market_regime_bullish=getattr(self, 'market_regime_bullish', True)
+        )
         
         return ranked_analyses
     
@@ -695,9 +705,10 @@ def main():
         logger.info("Checking market regime only...")
         is_bullish = scanner.check_market_regime(skip_breadth=fast_regime)
         if is_bullish:
-            scanner.dashboard.console.print("\n[green]Market regime is BULLISH - good for options trading![/green]")
+            scanner.dashboard.console.print("\n[green]Market regime is BULLISH - conditions favorable for bullish options strategies![/green]")
         else:
-            scanner.dashboard.console.print("\n[red]Market regime is NOT BULLISH - consider defensive strategies.[/red]")
+            scanner.dashboard.console.print("\n[yellow]Market regime is NOT BULLISH - consider reducing position sizes or defensive strategies.[/yellow]")
+            scanner.dashboard.console.print("[dim]Scanner will still run but with caution warnings when regime is not bullish.[/dim]")
         return
     
     if continuous_mode:

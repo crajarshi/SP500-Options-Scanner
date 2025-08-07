@@ -46,6 +46,10 @@ VIX_THRESHOLD = 25  # Maximum VIX level for bullish regime
 VIX_WARNING_THRESHOLD = 20  # VIX level for caution alert
 MIN_TRADING_DAYS_REQUIRED = 252  # Minimum days of history required
 
+# Market regime behavior
+HALT_ON_BEARISH_REGIME = False  # If True, stops scan when regime not bullish
+SHOW_REGIME_WARNING = True  # Display warnings when regime not bullish
+
 # Future defensive mode thresholds (Phase 2)
 BEARISH_BREADTH_THRESHOLD = 40  # When to consider put opportunities
 EXTREME_VIX_THRESHOLD = 30  # High volatility opportunities

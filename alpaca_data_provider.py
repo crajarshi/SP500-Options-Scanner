@@ -65,6 +65,9 @@ class AlpacaDataProvider:
         Returns:
             DataFrame with OHLCV data or None if error
         """
+        # Sanitize symbol for Alpaca
+        clean_symbol = self.sanitize_symbol(symbol)
+        
         try:
             # Calculate date range
             end = datetime.now()
@@ -74,8 +77,8 @@ class AlpacaDataProvider:
             start_str = start.strftime('%Y-%m-%dT00:00:00Z')
             end_str = end.strftime('%Y-%m-%dT23:59:59Z')
             
-            # Construct API endpoint
-            endpoint = f"{self.data_url}/v2/stocks/{symbol}/bars"
+            # Construct API endpoint with sanitized symbol
+            endpoint = f"{self.data_url}/v2/stocks/{clean_symbol}/bars"
             
             # Parameters
             params = {
@@ -138,9 +141,16 @@ class AlpacaDataProvider:
             logger.error(f"Error fetching data for {symbol}: {e}")
             return None
     
+    def sanitize_symbol(self, symbol: str) -> str:
+        """
+        Sanitize symbol for Alpaca API
+        Alpaca doesn't use dashes: BRK-B → BRKB, BF-B → BFB
+        """
+        return symbol.replace("-", "").replace(".", "")
+    
     def fetch_latest_quote(self, symbol: str) -> Optional[Dict]:
         """
-        Fetch latest quote for a symbol
+        Fetch latest quote for a symbol with error handling
         
         Args:
             symbol: Stock symbol
@@ -148,19 +158,47 @@ class AlpacaDataProvider:
         Returns:
             Dictionary with latest quote data or None if error
         """
+        # Sanitize symbol for Alpaca
+        clean_symbol = self.sanitize_symbol(symbol)
+        
         try:
-            endpoint = f"{self.data_url}/v2/stocks/{symbol}/quotes/latest"
+            endpoint = f"{self.data_url}/v2/stocks/{clean_symbol}/quotes/latest"
             
             response = self.session.get(endpoint)
+            
+            # Handle specific HTTP errors
+            if response.status_code == 400:
+                logger.warning(f"Bad symbol: {symbol} (sanitized to {clean_symbol})")
+                return None
+            elif response.status_code == 429:
+                logger.warning(f"Rate limit hit for {clean_symbol}, waiting...")
+                time.sleep(2)  # Wait 2 seconds
+                # Retry once
+                response = self.session.get(endpoint)
+                if response.status_code != 200:
+                    return None
+            elif response.status_code == 404:
+                logger.debug(f"Symbol not found: {clean_symbol}")
+                return None
+            
             response.raise_for_status()
             
             data = response.json()
             
             if 'quote' in data:
-                return data['quote']
+                quote_data = data['quote']
+                # Add original symbol for tracking
+                quote_data['original_symbol'] = symbol
+                return quote_data
             else:
                 return None
                 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                logger.warning(f"Rate limit hit for {clean_symbol}, skipping")
+            else:
+                logger.error(f"HTTP error fetching quote for {symbol}: {e}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching quote for {symbol}: {e}")
             return None
@@ -185,8 +223,8 @@ class AlpacaDataProvider:
             start_str = start.strftime('%Y-%m-%dT00:00:00Z')
             end_str = end.strftime('%Y-%m-%dT23:59:59Z')
             
-            # Construct API endpoint
-            endpoint = f"{self.data_url}/v2/stocks/{symbol}/bars"
+            # Construct API endpoint with sanitized symbol
+            endpoint = f"{self.data_url}/v2/stocks/{clean_symbol}/bars"
             
             # Parameters for daily bars
             params = {
@@ -318,9 +356,12 @@ class AlpacaDataProvider:
             Dictionary with options chain data organized by expiration and strike
             Format: {expiration_date: {strike: {call: {...}, put: {...}}}}
         """
+        # Sanitize symbol for Alpaca
+        clean_symbol = self.sanitize_symbol(symbol)
+        
         try:
             # Use Alpaca options snapshots endpoint for complete chain with Greeks
-            endpoint = f"{self.data_url}/v1beta1/options/snapshots/{symbol}"
+            endpoint = f"{self.data_url}/v1beta1/options/snapshots/{clean_symbol}"
             
             # Add feed parameter for options data
             params = {
@@ -500,6 +541,153 @@ class AlpacaDataProvider:
         
         logger.info(f"Generated simulated options chain for {symbol}")
         return chain
+    
+    def calculate_beta(self, symbol: str, benchmark: str = 'SPY', period: int = 252) -> float:
+        """
+        Calculate beta coefficient vs benchmark
+        
+        Args:
+            symbol: Stock symbol to calculate beta for
+            benchmark: Benchmark symbol (default SPY)
+            period: Number of trading days for calculation
+            
+        Returns:
+            Beta coefficient
+        """
+        try:
+            # Note: fetch_bars already handles symbol sanitization internally
+            # Fetch historical data for both stock and benchmark
+            stock_data = self.fetch_bars(symbol, '1Day', days_back=period)
+            benchmark_data = self.fetch_bars(benchmark, '1Day', days_back=period)
+            
+            if stock_data is None or benchmark_data is None or len(stock_data) < 30:
+                logger.warning(f"Insufficient data for beta calculation: {symbol}")
+                return 1.0  # Default beta
+            
+            # Calculate daily returns
+            stock_returns = stock_data['close'].pct_change().dropna()
+            benchmark_returns = benchmark_data['close'].pct_change().dropna()
+            
+            # Align data by timestamp
+            aligned = pd.concat([stock_returns, benchmark_returns], axis=1).dropna()
+            if len(aligned) < 30:  # Need minimum data points
+                logger.warning(f"Insufficient aligned data for beta: {symbol}")
+                return 1.0
+            
+            aligned.columns = ['stock', 'benchmark']
+            
+            # Calculate beta = covariance(stock, market) / variance(market)
+            covariance = aligned['stock'].cov(aligned['benchmark'])
+            variance = aligned['benchmark'].var()
+            
+            if variance > 0:
+                beta = covariance / variance
+                logger.debug(f"Beta for {symbol}: {beta:.2f}")
+                return beta
+            else:
+                return 1.0
+                
+        except Exception as e:
+            logger.error(f"Error calculating beta for {symbol}: {e}")
+            return 1.0  # Default beta on error
+    
+    def calculate_iv_rank(self, symbol: str, current_iv: float = None) -> float:
+        """
+        Calculate IV rank (percentile) over past year
+        Phase 1: Simple approximation based on current IV levels
+        Phase 2 TODO: Store and calculate from 252 days of historical IV data
+        
+        Args:
+            symbol: Stock symbol
+            current_iv: Current implied volatility (if known)
+            
+        Returns:
+            IV rank as percentage (0-100)
+        """
+        try:
+            # Phase 1: Simple approximation based on typical IV ranges
+            # This is a rough estimate until we implement historical IV storage
+            
+            if current_iv is None:
+                # Try to get from options chain
+                chain = self.fetch_options_chain(symbol)
+                if chain:
+                    # Get ATM option IV as proxy
+                    ivs = []
+                    for exp_date, strikes in chain.items():
+                        for strike, data in strikes.items():
+                            if 'call' in data and 'implied_volatility' in data['call']:
+                                ivs.append(data['call']['implied_volatility'])
+                    
+                    if ivs:
+                        current_iv = np.median(ivs)
+                    else:
+                        logger.warning(f"No IV data available for {symbol}")
+                        return 50.0  # Default middle rank
+                else:
+                    return 50.0
+            
+            # Rough approximation based on typical IV ranges
+            # TODO: Replace with actual historical percentile calculation
+            if current_iv < 0.15:
+                return 5
+            elif current_iv < 0.20:
+                return 15
+            elif current_iv < 0.25:
+                return 25
+            elif current_iv < 0.30:
+                return 40
+            elif current_iv < 0.35:
+                return 50
+            elif current_iv < 0.40:
+                return 60
+            elif current_iv < 0.50:
+                return 70
+            elif current_iv < 0.60:
+                return 80
+            elif current_iv < 0.80:
+                return 90
+            else:
+                return 95
+                
+        except Exception as e:
+            logger.error(f"Error calculating IV rank for {symbol}: {e}")
+            return 50.0  # Default middle rank
+    
+    def get_historical_volatility(self, symbol: str, period: int = 30) -> float:
+        """
+        Calculate historical volatility (realized volatility)
+        
+        Args:
+            symbol: Stock symbol
+            period: Number of trading days for calculation
+            
+        Returns:
+            Annualized historical volatility
+        """
+        try:
+            # Fetch historical data
+            data = self.fetch_bars(symbol, '1Day', days_back=period * 2)
+            
+            if data is None or len(data) < period:
+                logger.warning(f"Insufficient data for HV calculation: {symbol}")
+                return 0.30  # Default 30% volatility
+            
+            # Calculate daily returns
+            returns = data['close'].pct_change().dropna()
+            
+            # Calculate standard deviation of returns
+            daily_vol = returns.std()
+            
+            # Annualize (assuming 252 trading days)
+            annual_vol = daily_vol * np.sqrt(252)
+            
+            logger.debug(f"Historical volatility for {symbol}: {annual_vol:.2%}")
+            return annual_vol
+            
+        except Exception as e:
+            logger.error(f"Error calculating historical volatility for {symbol}: {e}")
+            return 0.30  # Default volatility
     
     def _get_monthly_expiration(self, base_date: datetime, months_ahead: int) -> datetime:
         """

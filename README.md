@@ -9,6 +9,7 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 
 ## Features
 
+### Core Scanner Features
 - **Intraday Analysis**: Uses 15-minute candles for responsive signals
 - **Adaptive Dual-Mode Scanner**: Automatically detects market conditions and adjusts strategy
   - Bullish Mode: Identifies SELL PUT / BUY CALL opportunities
@@ -29,6 +30,14 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 - **Smart Caching**: Reduces API calls with aggressive daily data caching
 - **Quick Scan Mode**: Use cached data for rapid re-analysis
 - **Comprehensive Error Handling**: Continues processing despite individual stock errors
+
+### 🚀 NEW: Maximum Profit Scanner
+- **High-Gamma Options Scanner**: Identifies explosive short-term opportunities
+- **Advanced Scoring Algorithm**: Normalized GTR (Gamma/Theta Ratio) with IV Rank
+- **Strict Filtering**: Beta > 1.2, IV Rank > 70%, liquidity requirements
+- **Risk-Aware**: Clear warnings, position sizing guidance, maximum loss calculations
+- **Production-Ready**: Comprehensive testing, parallel processing, data export
+- **See [MAX_PROFIT_SCANNER.md](MAX_PROFIT_SCANNER.md) for detailed documentation**
 
 ## 🚀 Getting Started - Complete Setup Guide
 
@@ -138,6 +147,9 @@ python sp500_options_scanner.py --continuous
 
 # Use legacy Finnhub API instead of Alpaca
 python sp500_options_scanner.py --finnhub
+
+# 🚀 NEW: Run Maximum Profit Scanner (high-gamma opportunities)
+python sp500_options_scanner.py --max-profit
 
 # Combine options
 python sp500_options_scanner.py --demo --continuous

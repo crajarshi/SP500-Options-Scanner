@@ -25,6 +25,7 @@ from demo_data_generator import generate_demo_intraday_data, get_demo_sp500_tick
 from alpaca_data_provider import AlpacaDataProvider
 from options_chain import OptionsChainAnalyzer
 from risk_manager import RiskManager
+from max_profit_scanner import MaxProfitScanner
 
 # Set up logging
 logging.basicConfig(
@@ -1075,6 +1076,11 @@ Examples:
                        action='store_true',
                        help='Include specific options contract recommendations')
     
+    # Maximum Profit Scanner
+    parser.add_argument('--max-profit',
+                       action='store_true',
+                       help='Run Maximum Profit scanner for high-gamma, explosive opportunities')
+    
     return parser.parse_args()
 
 def main():
@@ -1090,12 +1096,52 @@ def main():
         if filter_signals:
             logger.info(f"Filtering for signals: {', '.join(filter_signals)}")
     
-    # Determine scanner mode
+    # Check if Maximum Profit mode is requested
+    if args.max_profit:
+        logger.warning("=" * 60)
+        logger.warning("🚀 MAXIMUM PROFIT MODE - Finding explosive opportunities...")
+        logger.warning("⚠️  HIGH RISK - These are speculative trades!")
+        logger.warning("=" * 60)
+        
+        # Create minimal scanner for data provider
+        # Force use_alpaca=True for max profit scanner to get data provider
+        scanner = SP500OptionsScanner(
+            demo_mode=False,  # Need data provider initialized
+            use_alpaca=True,  # Force Alpaca for data provider
+            quick_mode=False,
+            scanner_mode='adaptive',
+            skip_regime=True,  # Skip regime check for max profit
+            fetch_options=False
+        )
+        
+        # Initialize Maximum Profit Scanner
+        max_scanner = MaxProfitScanner(
+            data_provider=scanner.data_provider,
+            risk_manager=scanner.risk_manager
+        )
+        
+        # Run the scan
+        opportunities = max_scanner.run_scan()
+        
+        # Display results with warnings
+        scanner.dashboard.display_max_profit_results(opportunities)
+        
+        # Save summary
+        if opportunities:
+            logger.info(f"Found {len(opportunities)} high-gamma opportunities")
+            for i, opp in enumerate(opportunities, 1):
+                logger.info(f"{i}. {opp['symbol']} - Score: {opp['score']:.1f}/100")
+        else:
+            logger.warning("No opportunities found matching criteria")
+        
+        return
+    
+    # Determine scanner mode for regular scanner
     scanner_mode = args.mode
     if args.bearish:
         scanner_mode = 'bearish'
     
-    # Create scanner
+    # Create regular scanner
     scanner = SP500OptionsScanner(
         demo_mode=args.demo,
         use_alpaca=not args.finnhub,  # Use Alpaca by default

@@ -550,3 +550,155 @@ class OptionsScannnerDashboard:
     def display_success(self, message: str):
         """Display success message"""
         self.console.print(f"[green]✓[/green] {message}")
+    
+    def create_max_profit_table(self, opportunities: List[Dict]) -> Table:
+        """
+        Create specialized table for Maximum Profit opportunities
+        """
+        table = Table(
+            title="🚀 Maximum Profit Opportunities - HIGH GAMMA OPTIONS",
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold red on black",
+            title_style="bold yellow"
+        )
+        
+        # Add columns with appropriate styling
+        table.add_column("#", style="bold white", width=3)
+        table.add_column("Symbol", style="bold cyan", width=8)
+        table.add_column("Contract", style="white", width=20)
+        table.add_column("Score", style="bold green", width=7)
+        table.add_column("G/T", style="bold magenta", width=8)
+        table.add_column("IVR", style="cyan", width=6)
+        table.add_column("Liq", style="blue", width=6)
+        table.add_column("Delta", style="yellow", width=7)
+        table.add_column("Price", style="white", width=8)
+        table.add_column("Breakdown", style="dim white", width=35)
+        table.add_column("Risk", style="bold red", width=10)
+        
+        # Add risk warning caption
+        table.caption = "⚠️  HIGH RISK - These are speculative short-term trades. Position size = 50% normal!"
+        
+        if not opportunities:
+            table.add_row(
+                "-", "No opportunities found", "-", "-", "-", "-", "-", "-", "-", "-", "-"
+            )
+            return table
+        
+        for i, opp in enumerate(opportunities[:5], 1):
+            # Format contract description
+            contract_desc = f"{opp['strike']:.0f} {opp['type'][:1].upper()} {opp['expiry']}"
+            
+            # Format score breakdown
+            breakdown_parts = []
+            if 'score_breakdown' in opp:
+                for key, value in opp['score_breakdown'].items():
+                    breakdown_parts.append(f"{key}:{value}")
+            breakdown = " ".join(breakdown_parts) if breakdown_parts else "N/A"
+            
+            # Calculate max risk (per contract)
+            max_risk = f"${opp.get('max_loss', opp['mid_price'] * 100):.0f}"
+            
+            # Color code score
+            score = opp['score']
+            if score >= 80:
+                score_str = f"[bold green]{score:.1f}[/bold green]"
+            elif score >= 60:
+                score_str = f"[yellow]{score:.1f}[/yellow]"
+            else:
+                score_str = f"[white]{score:.1f}[/white]"
+            
+            table.add_row(
+                str(i),
+                opp['symbol'],
+                contract_desc,
+                score_str,
+                f"{opp.get('gt_ratio', 0):.2f}",
+                f"{opp.get('iv_rank', 0):.0f}%",
+                f"{opp.get('liquidity', 0):.0f}",
+                f"{opp.get('delta', 0):.2f}",
+                f"${opp['mid_price']:.2f}",
+                breakdown,
+                max_risk
+            )
+        
+        return table
+    
+    def display_max_profit_results(self, opportunities: List[Dict]):
+        """
+        Display complete Maximum Profit scanner results with warnings
+        """
+        # Clear console
+        self.console.clear()
+        
+        # Display warning panel
+        warning_panel = Panel(
+            Text.from_markup(
+                "[bold red]⚠️  MAXIMUM PROFIT SCANNER - HIGH RISK WARNING ⚠️[/bold red]\n\n"
+                "[yellow]These are speculative, short-term options with high gamma.[/yellow]\n"
+                "[yellow]• Explosive potential but also high risk of total loss[/yellow]\n"
+                "[yellow]• Position size should be 50% of normal[/yellow]\n"
+                "[yellow]• Monitor positions closely - theta decay is significant[/yellow]\n"
+                "[yellow]• Only trade with capital you can afford to lose[/yellow]\n\n"
+                "[dim]Strategy: Buy slightly OTM options (delta 0.15-0.45) with 7-21 DTE[/dim]\n"
+                "[dim]on high-beta stocks (>1.2) with elevated IV rank (>70%)[/dim]"
+            ),
+            box=box.HEAVY,
+            border_style="red",
+            padding=(1, 2)
+        )
+        self.console.print(warning_panel)
+        
+        # Display opportunities table
+        table = self.create_max_profit_table(opportunities)
+        self.console.print(table)
+        
+        # Display key metrics panel if we have results
+        if opportunities:
+            self._display_max_profit_metrics(opportunities)
+        
+        # Display legend
+        legend = Panel(
+            Text.from_markup(
+                "[bold]Score Components:[/bold]\n"
+                "• GTR: Gamma/Theta Ratio (50% weight) - Higher = More explosive\n"
+                "• IVR: IV Rank (30% weight) - Higher = More volatility expected\n"
+                "• LIQ: Liquidity Score (20% weight) - Higher = Easier to trade\n"
+                "• PRICE_ADJ: Price penalty applied to avoid expensive outliers\n\n"
+                "[bold]Key Metrics:[/bold]\n"
+                "• G/T: Gamma/Theta ratio - The higher, the more leverage\n"
+                "• Delta: Option sensitivity to stock price (0.15-0.45 target)\n"
+                "• Risk: Maximum loss per contract if expires worthless"
+            ),
+            title="📊 Understanding the Metrics",
+            box=box.MINIMAL,
+            border_style="dim"
+        )
+        self.console.print(legend)
+    
+    def _display_max_profit_metrics(self, opportunities: List[Dict]):
+        """Display summary metrics for max profit opportunities"""
+        if not opportunities:
+            return
+        
+        # Calculate aggregate metrics
+        avg_score = sum(o['score'] for o in opportunities) / len(opportunities)
+        avg_gt = sum(o.get('gt_ratio', 0) for o in opportunities) / len(opportunities)
+        avg_iv_rank = sum(o.get('iv_rank', 0) for o in opportunities) / len(opportunities)
+        total_risk = sum(o.get('max_loss', 0) for o in opportunities)
+        
+        metrics_text = Text()
+        metrics_text.append("Summary Metrics\n", style="bold underline")
+        metrics_text.append(f"Average Score: {avg_score:.1f}/100\n")
+        metrics_text.append(f"Average G/T Ratio: {avg_gt:.2f}\n")
+        metrics_text.append(f"Average IV Rank: {avg_iv_rank:.0f}%\n")
+        metrics_text.append(f"Total Risk (all 5): ${total_risk:.0f}\n")
+        metrics_text.append(f"Suggested Position Size: ${total_risk/5:.0f} per trade\n", style="bold yellow")
+        
+        metrics_panel = Panel(
+            metrics_text,
+            title="📈 Portfolio Metrics",
+            box=box.MINIMAL,
+            border_style="blue"
+        )
+        self.console.print(metrics_panel)

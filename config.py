@@ -151,6 +151,72 @@ COLOR_BUY = 'green'
 COLOR_HOLD = 'white'
 COLOR_AVOID = 'red'
 
+# ============================================================================
+# MAXIMUM PROFIT SCANNER CONFIGURATION
+# High-gamma, short-dated options scanner for explosive opportunities
+# ============================================================================
+
+# Stock Selection Criteria
+MAX_PROFIT_BETA_THRESHOLD = 1.2                    # Minimum beta vs SPY
+MAX_PROFIT_IV_RANK_THRESHOLD = 70                  # Minimum IV rank (0-100 scale)
+MAX_PROFIT_MIN_STOCK_DAILY_VOLUME = 300000        # Lowered for mid-caps
+MAX_PROFIT_MIN_STOCK_PRICE = 5.0                  # Avoid penny stocks
+
+# Options Selection - Two-stage filtering
+MAX_PROFIT_DELTA_SCAN_MIN = 0.10                  # Wide initial scan range
+MAX_PROFIT_DELTA_SCAN_MAX = 0.50
+MAX_PROFIT_DELTA_FINAL_MIN = 0.15                 # Narrower final filter
+MAX_PROFIT_DELTA_FINAL_MAX = 0.45
+
+# Expiration Window (sweet spot for gamma)
+MAX_PROFIT_MIN_EXPIRY_DAYS = 7
+MAX_PROFIT_MAX_EXPIRY_DAYS = 21
+
+# Liquidity Requirements (strict filtering)
+MAX_PROFIT_MIN_OPTION_OI = 100                    # Minimum open interest
+MAX_PROFIT_MIN_OPTION_AVG_VOLUME_5D = 5           # 5-day average volume
+MAX_PROFIT_MAX_SPREAD_PCT = 0.15                  # 15% max bid-ask spread
+MAX_PROFIT_MIN_BID = 0.05                         # Minimum bid price
+
+# Scoring Reference Constants
+MAX_PROFIT_OI_REF = 1000                          # Reference OI for log normalization
+MAX_PROFIT_VOL_REF = 50                           # Reference volume for log normalization
+MAX_PROFIT_EPSILON = 1e-6                         # Stability guard for division
+
+# Scoring Weights - Main Components (must sum close to 1.0)
+MAX_PROFIT_GTR_WEIGHT = 0.50                      # Gamma/Theta ratio weight
+MAX_PROFIT_IVR_WEIGHT = 0.30                      # IV Rank weight  
+MAX_PROFIT_LIQ_WEIGHT = 0.20                      # Liquidity composite weight
+
+# Liquidity Sub-weights (must sum to 1.0)
+MAX_PROFIT_LIQ_OI_WEIGHT = 0.40                   # Open interest weight
+MAX_PROFIT_LIQ_VOL_WEIGHT = 0.30                  # Volume weight
+MAX_PROFIT_LIQ_SPREAD_WEIGHT = 0.30               # Spread penalty weight
+
+# Price Penalty
+MAX_PROFIT_PRICE_PENALTY_ALPHA = 0.15             # Multiplicative penalty factor
+
+# Performance Settings
+MAX_PROFIT_MAX_WORKERS = 10                       # Parallel fetching threads
+MAX_PROFIT_WINSORIZE_PCT = 0.02                   # Top/bottom 2% winsorization
+MAX_PROFIT_TOP_RESULTS = 5                        # Display only top 5
+
+# Rate Limiting Settings
+MAX_PROFIT_RATE_LIMIT_DELAY = 0.1                 # 100ms between API calls
+MAX_PROFIT_BATCH_SIZE = 50                        # Process stocks in batches
+MAX_PROFIT_CONCURRENT_QUOTES = 5                  # Max concurrent quote requests
+MAX_PROFIT_CONCURRENT_OPTIONS = 3                 # Max concurrent options requests
+
+# Output Settings
+MAX_PROFIT_OUTPUT_DIR = 'output/max_profit'       # Output directory
+MAX_PROFIT_LOG_SKIPPED = True                     # Log why contracts were skipped
+MAX_PROFIT_CACHE_MINUTES = 5                      # Cache validity for scans
+
+# Risk Management for Max Profit trades
+MAX_PROFIT_POSITION_SIZE_MULT = 0.5               # 50% of normal position size
+MAX_PROFIT_MAX_DAILY_TRADES = 3                   # Limit number of trades
+
 # Create directories if they don't exist
-for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR, WATCHLIST_DIR, WATCHLIST_OUTPUT_DIR, RISK_DATA_DIR]:
+for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR, WATCHLIST_DIR, WATCHLIST_OUTPUT_DIR, 
+                  RISK_DATA_DIR, MAX_PROFIT_OUTPUT_DIR]:
     os.makedirs(directory, exist_ok=True)

@@ -1,0 +1,144 @@
+Here’s a refined **Operator Guide** for the **SP500 Options Scanner**—clean, comprehensive, and actionable. It covers what the tool does, how to interpret its signals, and step-by-step operating instructions.
+
+---
+
+## 1. Overview & Purpose
+
+The **S\&P 500 Intraday Options Scanner** is a Python-based tool designed to:
+
+* Monitor all S\&P 500 stocks using **15-minute intervals**, providing real-time technical analysis.
+* Combine multiple indicators (RSI, MACD, Bollinger Bands, OBV, ATR, Volatility) into a single normalized **composite score (0–100)**.
+* Generate clear options trading signals—**Strong Buy**, **Buy**, **Hold**, **Avoid**—adapted to current market regime (bullish, bearish, mixed).
+* Present results in an **interactive dashboard** with live updates, score breakdowns, and volatility context.
+* Provide options contract recommendations via `--options` flag, including strike, delta, IV, liquidity, etc.
+* Work in **Demo**, **Quick**, or **Continuous** modes for testing, rapid scanning, or live monitoring.
+
+---
+
+## 2. Scanner Signals & What They Mean
+
+### Scoring & Indicators
+
+* **Composite Score** =
+  `RSI (30%) + MACD (30%) + Bollinger (20%) + OBV (10%) + ATR (10%)` → normalized 0–100.
+* **Key Indicators**:
+
+  * **RSI**: Oversold (good) → high score; Overbought (bad) → low.
+  * **MACD**: Bullish crossover → high; otherwise low.
+  * **Bollinger Bands**: Price near lower band → high; near upper → low.
+  * **OBV**: Volume trending upward → high; downward → low.
+  * **ATR**: Rising volatility → high; falling → low.
+
+### Signal Categories
+
+| Score Range | Signal         | What It Means                                   | Options Strategy Ideas                             |
+| ----------- | -------------- | ----------------------------------------------- | -------------------------------------------------- |
+| > 85        | **STRONG BUY** | Strong bullish indicators and rising volatility | Buy Calls / Sell Puts / Bull Call Spreads          |
+| 70–85       | **BUY**        | Clear bullish setup                             | Sell Put Spreads / Buy Calls / Calendar Spreads    |
+| 30–70       | **HOLD**       | Mixed or neutral signals                        | Avoid new trades / consider Iron Condors / Monitor |
+| < 30        | **AVOID**      | No bullish edge                                 | Skip or consider bearish strategies if permitted   |
+
+* **Volatility Indicator (ATR Trend)**:
+
+  * **↑ Rising ATR** → favorable for buying options (expanding premiums).
+  * **↓ Falling ATR** → better for premium-selling strategies.
+
+---
+
+## 3. Operational Modes & Commands
+
+### Setup & Launch
+
+1. Clone the repo and install requirements via `pip install -r requirements.txt`.
+2. Set up `.env` with your Alpaca API keys (unless using demo mode).
+3. Run:
+
+   ```bash
+   python sp500_options_scanner.py
+   ```
+
+   * Runs in **Adaptive mode** by default (autodetects bullish/bearish regime).
+   * Takes **\~45–60 seconds** for a full S\&P 500 scan (less in Quick mode with cache).
+
+### Available Flags
+
+* `--demo` → Simulate scan without API calls, useful for testing.
+* `--quick` → Use cached data from the last 24 hours—fast re-scans in seconds.
+* `--continuous` → Automatically refresh scan every 30 minutes.
+* `--finnhub` → Use legacy Finnhub data provider instead of Alpaca.
+* `--watchlist X.txt` → Scan a custom tickers list in `watchlists/`.
+* `--mode [bullish|bearish|mixed]` → Force scanner behavior when desired.
+* Combine flags, e.g., `--quick --continuous`, `--watchlist top10.txt --options`.
+
+---
+
+## 4. Using the Dashboard & Reading Results
+
+* **Market Regime Check**
+  At launch, scanner displays SPY vs its 50-day MA. If SPY > MA, bullish; otherwise halts or switches modes.
+
+* **Progress Visualization**
+  A live progress bar shows scan completeness and ETA.
+
+* **Main Dashboard Display**
+  Shows top signals like:
+
+  ```
+  Rank | Ticker | Price | Δ% | Score | ATR | Vol Trend | Signal | Indicators
+  ```
+
+  * Colors and icons change based on indicator statuses (e.g., “✓”, “↑”).
+
+* **Interpretation → What to Trade**
+
+  * Prioritize **Strong Buy (Score > 85)** signals with **ATR ↑**.
+  * For moderate **Buy** signals, confirm volatility alignment.
+  * Hold or Avoid signals should usually be ignored in bullish strategies.
+
+---
+
+## 5. Options Mode (`--options` flag)
+
+* Activates a specialized options view:
+
+  * Computes the **single best contract** per stock based on liquidity, delta (0.70 for directional, 0.50 for neutral), low spread (<10%), and open interest (>100).
+  * Shows contract details (strike, expiry, delta, bid/ask, OI, volume, IV).
+  * Automatically adapts for **after-hours / next trading day** scenarios using Alpaca clock/calendar.
+
+---
+
+## 6. Troubleshooting Tips
+
+* **ModuleNotFoundError** → Ensure virtual environment is active; re-run `pip install`.
+* **API Errors (403/429)** → Confirm keys and reduce request speed or switch to `--demo`.
+* **Very Slow Scans** → Use `--quick` or increase call delay in config.
+* **“Bad Symbol” errors (e.g., BRK.B)** → Tool auto-sanitizes those, so just observe in logs.
+* **No Signals / Blank Output** → Could be bearish regime or missing data; review logs or run in demo mode.
+
+---
+
+## Best Practices Summary
+
+1. **Check market regime first** (SPY & 50-day MA).
+2. **Scan during market hours**, ideally 30–60 minutes after open.
+3. **Use Quick mode** when adjusting configurations for faster iteration.
+4. **Only act on top 3–5 signals** with rising ATR.
+5. **Always pair signals with your risk management rules**, especially for options.
+6. **Run `--options`** if you want contract-specific trade ideas.
+7. **For after-hours planning**, the tool automatically adapts for next-day options.
+
+---
+
+## Tool Operating Flow (Operator Steps)
+
+1. Launch tool (`python sp500_options_scanner.py [flags]`).
+2. View **Market Regime** indicator.
+3. Observe **Top Options Signals** list.
+4. Check ATR trend and individual indicators for confirmation.
+5. If in options mode, inspect recommended contracts.
+6. Use results to inform options trading decisions.
+7. Save outputs (`CSV`, logs) for audit and review.
+8. Repeat every 30–60 minutes or use continuous mode for regular cadence.
+
+---
+

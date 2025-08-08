@@ -363,6 +363,42 @@ def generate_signal(composite_score: float, score_type: str = 'bullish') -> Tupl
     return 'HOLD', 'NO SIGNAL', '⚪'
 
 
+def get_actionable_header(signal_type: str) -> str:
+    """
+    Convert internal signal names to clear, actionable headers for options recommendations
+    
+    Args:
+        signal_type: Internal signal name (e.g., 'STRONG_BUY', 'WEAK_SELL')
+        
+    Returns:
+        Clear actionable instruction (e.g., 'BUY CALL', 'BUY PUT (WEAK SIGNAL)')
+    """
+    signal_to_action = {
+        # Bullish signals
+        'STRONG_BUY': 'BUY CALL',
+        'BUY': 'BUY CALL',
+        'BULLISH': 'BUY CALL',
+        'WEAK_BUY': 'BUY CALL (WEAK SIGNAL)',
+        
+        # Bearish signals
+        'STRONG_SELL': 'BUY PUT',
+        'SELL': 'BUY PUT',
+        'BEARISH': 'BUY PUT',
+        'WEAK_SELL': 'BUY PUT (WEAK SIGNAL)',
+        
+        # Neutral signals
+        'NEUTRAL': 'CONSIDER STRADDLE',
+        'NEUTRAL_BULL': 'CONSIDER STRADDLE',
+        'NEUTRAL_BEAR': 'CONSIDER STRADDLE',
+        'HOLD': 'CONSIDER STRADDLE',
+        'NEUTRAL+': 'CONSIDER STRADDLE',
+        'NEUTRAL-': 'CONSIDER STRADDLE',
+        'NO ACTION': 'NO OPTIONS TRADE'
+    }
+    
+    return signal_to_action.get(signal_type.upper(), signal_type)
+
+
 def analyze_stock(ticker: str, indicators: Dict, mode: str = 'adaptive', market_regime: Dict = None) -> Optional[Dict]:
     """
     Complete analysis for a single stock with mode awareness

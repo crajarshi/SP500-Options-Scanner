@@ -15,13 +15,15 @@ from rich import box
 import pytz
 
 import config
+from signals import get_actionable_header
 
 
 class OptionsScannnerDashboard:
     """Interactive dashboard for displaying stock analysis results"""
     
-    def __init__(self):
+    def __init__(self, risk_manager=None):
         self.console = Console()
+        self.risk_manager = risk_manager
         self.eastern = pytz.timezone('US/Eastern')
         
     def get_market_status(self, scan_context: Dict = None) -> Tuple[str, str]:
@@ -323,6 +325,10 @@ class OptionsScannnerDashboard:
         self.console.print(self.create_header(scan_time, next_scan, market_regime_bullish, 
                                               scan_type, watchlist_file, scan_context))
         
+        # Display risk status if risk manager is available
+        if self.risk_manager:
+            self.display_risk_status()
+        
         # Display compact scoring info
         self.console.print(self.create_compact_scoring_info())
         
@@ -363,6 +369,52 @@ class OptionsScannnerDashboard:
             error_text += "See logs/error_log.txt for details.[/yellow]"
             self.console.print(error_text)
     
+    def display_risk_status(self):
+        """Display risk management status panel"""
+        if not self.risk_manager:
+            return
+        
+        status = self.risk_manager.get_risk_status()
+        
+        # Determine emoji and style based on status
+        if status['status'] == 'BLOCKED':
+            emoji = "❌"
+            status_style = "bold red"
+            panel_style = "red"
+        elif status['status'] == 'WARNING':
+            emoji = "⚠️"
+            status_style = "bold yellow"
+            panel_style = "yellow"
+        else:
+            emoji = "✅"
+            status_style = "bold green"
+            panel_style = "green"
+        
+        # Create risk status content
+        if status['trades_blocked']:
+            content = Text(
+                f"{emoji} TRADING BLOCKED - Daily Loss Limit Reached\n"
+                f"Current Loss: ${-status['daily_pnl']:.2f} | Limit: ${status['daily_limit']:.2f}\n"
+                f"Trading will resume tomorrow",
+                style="bold red"
+            )
+        else:
+            content = Text()
+            content.append(f"💰 RISK STATUS: {emoji} {status['status']}", style=status_style)
+            content.append(f" | Daily P&L: ${status['daily_pnl']:+.2f}")
+            content.append(f" | Limit: ${status['daily_limit']:.2f}\n")
+            content.append(f"Remaining Capacity: ${status['remaining_capacity']:.2f}")
+            content.append(f" ({status['capacity_percent']:.0f}%)")
+            content.append(f" | Portfolio: ${status['portfolio_value']:,.0f}")
+        
+        # Display panel
+        self.console.print(Panel(
+            content,
+            box=box.DOUBLE,
+            border_style=panel_style,
+            padding=(0, 1)
+        ))
+    
     def display_options_recommendations(self, analyses: List[Dict]):
         """Display options contract recommendations if available"""
         # Check if any analyses have options data
@@ -387,9 +439,12 @@ class OptionsScannnerDashboard:
             if not contracts:
                 continue
             
+            # Get actionable header for clear instructions
+            actionable_header = get_actionable_header(signal)
+            
             # Create a table for this stock's options
             table = Table(
-                title=f"[bold cyan]{ticker}[/bold cyan] @ ${analysis['current_price']:.2f} - {signal}",
+                title=f"[bold cyan]{ticker}[/bold cyan] @ ${analysis['current_price']:.2f} - {actionable_header}",
                 box=box.ROUNDED,
                 show_lines=True,
                 title_style="bold white",
@@ -413,17 +468,61 @@ class OptionsScannnerDashboard:
                 spread_color = "green" if contract['spread%'] < 5 else "yellow" if contract['spread%'] < 10 else "red"
                 liquidity_color = "green" if contract['liquidity'] > 70 else "yellow" if contract['liquidity'] > 50 else "red"
                 
-                table.add_row(
-                    ticker,  # Add ticker symbol
-                    f"${contract['strike']:.2f}",
-                    contract['expiration'],
-                    contract['type'],
-                    f"{contract['delta']:.2f}",
-                    f"${contract['bid']:.2f}/${contract['ask']:.2f}",
-                    Text(f"{contract['spread%']:.1f}%", style=spread_color),
-                    f"{contract['OI']:,}",
-                    Text(f"{contract['liquidity']:.0f}", style=liquidity_color)
-                )
+                # Check for risk information
+                if contract.get('risk_blocked', False):
+                    # Contract is blocked by risk manager
+                    table.add_row(
+                        ticker,
+                        f"${contract['strike']:.2f}",
+                        contract['expiration'],
+                        contract['type'],
+                        f"{contract['delta']:.2f}",
+                        f"${contract['bid']:.2f}/${contract['ask']:.2f}",
+                        Text(f"{contract['spread%']:.1f}%", style=spread_color),
+                        f"{contract['OI']:,}",
+                        Text("BLOCKED", style="bold red")
+                    )
+                    # Add risk message in next row
+                    self.console.print(f"   [red]❌ {contract.get('risk_message', 'Risk limit exceeded')}[/red]")
+                elif not contract.get('risk_valid', True):
+                    # Contract exceeds risk but can be adjusted
+                    table.add_row(
+                        ticker,
+                        f"${contract['strike']:.2f}",
+                        contract['expiration'],
+                        contract['type'],
+                        f"{contract['delta']:.2f}",
+                        f"${contract['bid']:.2f}/${contract['ask']:.2f}",
+                        Text(f"{contract['spread%']:.1f}%", style=spread_color),
+                        f"{contract['OI']:,}",
+                        Text(f"{contract['liquidity']:.0f}", style=liquidity_color)
+                    )
+                    # Show risk adjustment message
+                    position_size = contract.get('position_size', 0)
+                    risk_msg = contract.get('risk_message', '')
+                    if position_size > 0:
+                        self.console.print(f"   [yellow]⚠️ {risk_msg} | Buy {position_size} contract(s)[/yellow]")
+                    else:
+                        self.console.print(f"   [red]❌ {risk_msg}[/red]")
+                else:
+                    # Contract passes risk checks
+                    position_size = contract.get('position_size', 1)
+                    total_risk = contract.get('total_risk', contract['mid'] * 100)
+                    
+                    table.add_row(
+                        ticker,
+                        f"${contract['strike']:.2f}",
+                        contract['expiration'],
+                        contract['type'],
+                        f"{contract['delta']:.2f}",
+                        f"${contract['bid']:.2f}/${contract['ask']:.2f}",
+                        Text(f"{contract['spread%']:.1f}%", style=spread_color),
+                        f"{contract['OI']:,}",
+                        Text(f"{contract['liquidity']:.0f}", style=liquidity_color)
+                    )
+                    # Show approved risk info
+                    if self.risk_manager:
+                        self.console.print(f"   [green]✅ Buy {position_size} contract(s) | Risk: ${total_risk:.2f}[/green]")
             
             self.console.print(table)
         

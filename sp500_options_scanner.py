@@ -24,6 +24,7 @@ from dashboard import OptionsScannnerDashboard
 from demo_data_generator import generate_demo_intraday_data, get_demo_sp500_tickers
 from alpaca_data_provider import AlpacaDataProvider
 from options_chain import OptionsChainAnalyzer
+from risk_manager import RiskManager
 
 # Set up logging
 logging.basicConfig(
@@ -42,7 +43,16 @@ class SP500OptionsScanner:
     
     def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False, scanner_mode='adaptive', 
                  watchlist_file=None, skip_regime=False, fetch_options=False):
-        self.dashboard = OptionsScannnerDashboard()
+        # Initialize risk manager
+        self.risk_manager = RiskManager(
+            portfolio_value=config.PORTFOLIO_VALUE,
+            risk_per_trade=config.RISK_PER_TRADE_PERCENT,
+            daily_loss_limit=config.DAILY_LOSS_LIMIT,
+            data_file=config.RISK_DATA_FILE
+        )
+        
+        # Initialize dashboard with risk manager
+        self.dashboard = OptionsScannnerDashboard(risk_manager=self.risk_manager)
         self.session = requests.Session()
         self.errors = []
         self.running = True
@@ -62,10 +72,10 @@ class SP500OptionsScanner:
             self.data_provider = AlpacaDataProvider()
             logger.info("Using Alpaca Market Data API")
             
-            # Initialize options analyzer if requested
+            # Initialize options analyzer with risk manager if requested
             if self.fetch_options:
-                self.options_analyzer = OptionsChainAnalyzer(self.data_provider)
-                logger.info("Options contract recommendations enabled")
+                self.options_analyzer = OptionsChainAnalyzer(self.data_provider, self.risk_manager)
+                logger.info("Options contract recommendations enabled with risk management")
             else:
                 self.options_analyzer = None
         else:
@@ -730,6 +740,12 @@ class SP500OptionsScanner:
         """
         if not self.options_analyzer:
             return
+        
+        # Check if trading is allowed by risk manager
+        can_trade, reason = self.risk_manager.can_place_trade()
+        if not can_trade:
+            logger.warning(f"Options recommendations blocked by risk manager: {reason}")
+            # Still fetch options but they'll be marked as blocked
         
         # Determine which stocks to process based on scan type
         if scan_type == 'watchlist':

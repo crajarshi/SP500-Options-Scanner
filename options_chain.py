@@ -32,6 +32,12 @@ class OptionsContract:
     implied_volatility: float
     days_to_expiry: int
     liquidity_score: float  # 0-100 score based on spread and OI
+    # Risk management fields
+    position_size: int = 1  # Number of contracts recommended
+    risk_valid: bool = True  # Whether contract passes risk checks
+    risk_message: str = ""  # Risk validation message
+    risk_blocked: bool = False  # Whether trade is blocked by risk manager
+    total_risk: float = 0  # Total dollar risk for position
     
     def is_liquid(self) -> bool:
         """Check if contract meets liquidity requirements"""
@@ -40,7 +46,7 @@ class OptionsContract:
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for display"""
-        return {
+        result = {
             'strike': self.strike,
             'expiration': self.expiration,
             'type': self.contract_type.upper(),
@@ -55,6 +61,20 @@ class OptionsContract:
             'DTE': self.days_to_expiry,
             'liquidity': self.liquidity_score
         }
+        
+        # Add risk fields if present
+        if hasattr(self, 'position_size'):
+            result['position_size'] = self.position_size
+        if hasattr(self, 'risk_valid'):
+            result['risk_valid'] = self.risk_valid
+        if hasattr(self, 'risk_message'):
+            result['risk_message'] = self.risk_message
+        if hasattr(self, 'total_risk'):
+            result['total_risk'] = self.total_risk
+        if hasattr(self, 'risk_blocked'):
+            result['risk_blocked'] = self.risk_blocked
+            
+        return result
 
 
 class OptionsChainAnalyzer:
@@ -64,16 +84,19 @@ class OptionsChainAnalyzer:
     - Expiration window (30-60 days)
     - Liquidity requirements (OI > 100, spread < 10%)
     - Monthly expirations preferred
+    - Risk management constraints
     """
     
-    def __init__(self, data_provider):
+    def __init__(self, data_provider, risk_manager=None):
         """
-        Initialize with data provider
+        Initialize with data provider and optional risk manager
         
         Args:
             data_provider: AlpacaDataProvider instance with options methods
+            risk_manager: Optional RiskManager instance for position sizing
         """
         self.data_provider = data_provider
+        self.risk_manager = risk_manager
         self.cache = {}  # Cache for options chains
         self.cache_expiry = {}  # Cache expiry times
         
@@ -91,10 +114,10 @@ class OptionsChainAnalyzer:
             List of top 3 optimal contracts or None if no suitable contracts
         """
         # Define signal categories
-        actionable_bullish = ['STRONG_BUY', 'BUY', 'BULLISH']
-        actionable_bearish = ['STRONG_SELL', 'SELL', 'BEARISH']
+        actionable_bullish = ['STRONG_BUY', 'BUY', 'BULLISH', 'WEAK_BUY']
+        actionable_bearish = ['STRONG_SELL', 'SELL', 'BEARISH', 'WEAK_SELL']
         neutral_signals = ['NEUTRAL', 'NEUTRAL_BULL', 'NEUTRAL_BEAR', 'HOLD', 
-                          'NEUTRAL+', 'NEUTRAL-', 'NO ACTION', 'WEAK_BUY', 'WEAK_SELL']
+                          'NEUTRAL+', 'NEUTRAL-', 'NO ACTION']
         
         try:
             # Determine contract type and delta based on signal
@@ -151,6 +174,35 @@ class OptionsChainAnalyzer:
             optimal_contract = self._find_single_best_contract(
                 liquid_contracts, target_delta, stock_price, contract_type
             )
+            
+            if not optimal_contract:
+                return None
+            
+            # Apply risk management validation if risk_manager is available
+            if self.risk_manager:
+                contract_price = optimal_contract.mid_price * 100  # Convert to dollar amount
+                
+                # Check if trading is allowed
+                can_trade, reason = self.risk_manager.can_place_trade()
+                if not can_trade:
+                    logger.warning(f"Risk Manager blocked trade for {symbol}: {reason}")
+                    optimal_contract.risk_blocked = True
+                    optimal_contract.risk_message = reason
+                    return [optimal_contract]  # Return with risk warning
+                
+                # Validate contract risk
+                valid, message, position_size = self.risk_manager.validate_contract_risk(contract_price)
+                
+                # Add risk information to contract
+                optimal_contract.position_size = position_size
+                optimal_contract.risk_valid = valid
+                optimal_contract.risk_message = message
+                optimal_contract.total_risk = contract_price * position_size if position_size > 0 else contract_price
+                
+                if not valid and position_size == 0:
+                    # Contract exceeds all risk limits
+                    logger.info(f"Contract for {symbol} rejected: {message}")
+                    optimal_contract.risk_blocked = True
             
             # Return as a list with single contract for compatibility
             return [optimal_contract] if optimal_contract else None
@@ -489,9 +541,15 @@ class OptionsChainAnalyzer:
         if not contracts:
             return f"No liquid options available for {symbol}"
         
+        # Import here to avoid circular dependency
+        from signals import get_actionable_header
+        
+        # Get clear actionable header
+        actionable_header = get_actionable_header(signal_type)
+        
         lines = []
         lines.append(f"\n📊 Options Recommendations for {symbol} @ ${stock_price:.2f}")
-        lines.append(f"Signal: {signal_type}")
+        lines.append(f"Action: {actionable_header}")
         lines.append("-" * 60)
         
         for i, contract in enumerate(contracts, 1):

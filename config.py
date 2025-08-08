@@ -133,6 +133,18 @@ OPTIONS_API_DELAY = 0.5     # Delay between API calls in seconds
 # Display Settings
 OPTIONS_MAX_DISPLAY = 10    # Maximum contracts to display in panel
 
+# Risk Management Settings
+PORTFOLIO_VALUE = 30000  # Total portfolio value in USD
+RISK_PER_TRADE_PERCENT = 0.015  # 1.5% risk per trade
+DAILY_LOSS_LIMIT_PERCENT = 0.05  # 5% max daily loss
+DAILY_LOSS_LIMIT = PORTFOLIO_VALUE * DAILY_LOSS_LIMIT_PERCENT  # $1,500
+MAX_DOLLAR_RISK_PER_TRADE = PORTFOLIO_VALUE * RISK_PER_TRADE_PERCENT  # $450
+
+# Risk data persistence
+RISK_DATA_DIR = 'risk_data'
+RISK_DATA_FILE = os.path.join(RISK_DATA_DIR, 'daily_pnl.json')
+TRADE_HISTORY_FILE = os.path.join(RISK_DATA_DIR, 'trade_history.csv')
+
 # Console colors (for rich library)
 COLOR_STRONG_BUY = 'bright_green'
 COLOR_BUY = 'green'
@@ -140,5 +152,5 @@ COLOR_HOLD = 'white'
 COLOR_AVOID = 'red'
 
 # Create directories if they don't exist
-for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR, WATCHLIST_DIR, WATCHLIST_OUTPUT_DIR]:
+for directory in [CACHE_DIR, OUTPUT_DIR, LOG_DIR, WATCHLIST_DIR, WATCHLIST_OUTPUT_DIR, RISK_DATA_DIR]:
     os.makedirs(directory, exist_ok=True)

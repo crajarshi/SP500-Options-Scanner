@@ -394,22 +394,34 @@ class SP500OptionsScanner:
         try:
             # Fetch intraday data
             df = self.fetch_intraday_data(ticker)
-            if df is None or len(df) < config.MIN_REQUIRED_BARS:
+            if df is None:
                 self.errors.append({
                     'ticker': ticker,
-                    'error': 'Insufficient data',
+                    'error': 'Failed to fetch data',
                     'timestamp': datetime.now()
                 })
+                return None
+            
+            if len(df) < config.MIN_REQUIRED_BARS:
+                self.errors.append({
+                    'ticker': ticker,
+                    'error': f'Insufficient data: {len(df)} bars, need {config.MIN_REQUIRED_BARS}',
+                    'timestamp': datetime.now()
+                })
+                logger.warning(f"{ticker}: Only {len(df)} bars available, need at least {config.MIN_REQUIRED_BARS}")
                 return None
             
             # Calculate indicators
             indicators = calculate_all_indicators(df)
             if indicators is None:
+                # More detailed error - check minimum requirements
+                required_bars = max(50, config.ATR_SMA_PERIOD, config.MACD_SLOW)
                 self.errors.append({
                     'ticker': ticker,
-                    'error': 'Failed to calculate indicators',
+                    'error': f'Failed to calculate indicators: {len(df)} bars, need {required_bars} for all indicators',
                     'timestamp': datetime.now()
                 })
+                logger.warning(f"{ticker}: Cannot calculate indicators with {len(df)} bars (need {required_bars})")
                 return None
             
             # Analyze with mode awareness

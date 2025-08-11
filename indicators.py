@@ -4,8 +4,11 @@ Technical indicator calculations for intraday data
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, Tuple
+import logging
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_rsi(prices: pd.Series, period: int = config.RSI_PERIOD) -> pd.Series:
@@ -230,7 +233,20 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Dict]:
     Returns:
         Dictionary containing all indicator values and scores
     """
-    if len(df) < config.MIN_REQUIRED_BARS:
+    # Defensive check: Ensure we have enough bars for all indicators
+    # Required periods: RSI(14), BB(20), MACD(26), ATR(14), ATR_SMA(30), Trend(50)
+    required_bars = max(
+        config.RSI_PERIOD,           # 14
+        config.BOLLINGER_PERIOD,     # 20
+        config.MACD_SLOW,            # 26
+        config.ATR_SMA_PERIOD,       # 30
+        50                           # For SMA50 in trend calculation
+    )
+    
+    if len(df) < required_bars:
+        logger.warning(f"Insufficient bars for indicators: have {len(df)}, need {required_bars}")
+        logger.debug(f"Minimum requirements - RSI:{config.RSI_PERIOD}, BB:{config.BOLLINGER_PERIOD}, "
+                    f"MACD:{config.MACD_SLOW}, ATR_SMA:{config.ATR_SMA_PERIOD}, Trend:50")
         return None
     
     # Extract price and volume data

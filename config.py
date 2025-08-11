@@ -25,7 +25,7 @@ MARKET_CLOSE_MINUTE = 0
 
 # Data settings
 INTRADAY_RESOLUTION = '15'  # 15-minute bars
-LOOKBACK_DAYS = 3  # Days of historical data to fetch
+LOOKBACK_DAYS = 7  # Days of historical data to fetch (7 days = ~182 15-min bars, enough for 50-period MA)
 MIN_REQUIRED_BARS = 30  # Minimum bars needed for calculations
 
 # Technical indicator periods (in bars, not days)

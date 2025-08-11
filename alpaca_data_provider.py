@@ -214,6 +214,9 @@ class AlpacaDataProvider:
         Returns:
             DataFrame with OHLCV data or None if error
         """
+        # Sanitize symbol for Alpaca
+        clean_symbol = self.sanitize_symbol(symbol)
+        
         try:
             # Calculate date range
             end = datetime.now()
@@ -761,7 +764,7 @@ class AlpacaDataProvider:
             
             # Test market data endpoint
             test_symbol = 'AAPL'
-            df = self.fetch_bars(test_symbol, timeframe='15Min', days_back=1)
+            df = self.fetch_bars(test_symbol, timeframe='15Min', days_back=3)
             
             if df is not None and not df.empty:
                 logger.info(f"Market data test successful. Got {len(df)} bars for {test_symbol}")

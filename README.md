@@ -31,13 +31,35 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 - **Quick Scan Mode**: Use cached data for rapid re-analysis
 - **Comprehensive Error Handling**: Continues processing despite individual stock errors
 
-### 🚀 NEW: Maximum Profit Scanner
-- **High-Gamma Options Scanner**: Identifies explosive short-term opportunities
-- **Advanced Scoring Algorithm**: Normalized GTR (Gamma/Theta Ratio) with IV Rank
-- **Strict Filtering**: Beta > 1.2, IV Rank > 70%, liquidity requirements
-- **Risk-Aware**: Clear warnings, position sizing guidance, maximum loss calculations
-- **Production-Ready**: Comprehensive testing, parallel processing, data export
+### 🚀 NEW: Maximum Profit Scanner (v2.0 - Adaptive Mode)
+- **Adaptive High-Gamma Scanner**: Automatically adjusts thresholds to find opportunities in any market
+- **3-Tier Filtering System**: 
+  - STRICT: Beta>1.2, IVR>70% (high conviction trades)
+  - MODERATE: Beta>1.1, IVR>60% (balanced opportunities)
+  - RELAXED: Beta>1.0, IVR>50% (broader search)
+- **Enhanced Scoring Algorithm**: GTR (45%) + IVR (25%) + Liquidity (15%) + Momentum (10%) + Earnings (5%)
+- **ETF Fallback**: Includes high-volatility ETFs (SPY, QQQ, IWM, etc.) when individual stocks don't qualify
+- **Near-Miss Tracking**: Shows contracts that barely missed criteria for manual review
+- **Smart Position Sizing**: Adaptive sizing based on filter mode and confidence
+- **Never Empty Results**: Guaranteed opportunities through progressive filtering
 - **See [MAX_PROFIT_SCANNER.md](MAX_PROFIT_SCANNER.md) for detailed documentation**
+
+## 📅 Recent Updates (v2.1.0)
+
+### Bug Fixes
+- **Fixed**: `clean_symbol` undefined error in market regime SPY data fetching
+- **Fixed**: Insufficient data for indicator calculations (increased LOOKBACK_DAYS from 3 to 7)
+- **Fixed**: Test connection now fetches 3 days instead of 1 for proper validation
+- **Enhanced**: Better error messages showing exact bar counts when data is insufficient
+
+### New Features  
+- **Adaptive Max-Profit Mode**: Automatically relaxes filters through 3 tiers if no opportunities found
+- **Momentum Scoring**: Added technical momentum indicators (RSI, trend, volume) to scoring
+- **Near-Miss Tracking**: Tracks and reports contracts that barely missed criteria
+- **ETF Support**: Falls back to high-volatility ETFs when individual stocks don't qualify
+- **Color-Coded Results**: Visual indicators for filter mode (Green=Strict, Yellow=Moderate, Gray=Relaxed, Blue=ETF)
+
+See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
 ## 🚀 Getting Started - Complete Setup Guide
 

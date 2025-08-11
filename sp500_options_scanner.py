@@ -1132,8 +1132,8 @@ def main():
             risk_manager=scanner.risk_manager
         )
         
-        # Run the scan
-        opportunities = max_scanner.run_scan()
+        # Run the adaptive scan (will try multiple threshold levels)
+        opportunities = max_scanner.run_adaptive_scan()
         
         # Display results with warnings
         scanner.dashboard.display_max_profit_results(opportunities)

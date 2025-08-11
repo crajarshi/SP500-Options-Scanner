@@ -608,9 +608,22 @@ class OptionsScannnerDashboard:
             else:
                 score_str = f"[white]{score:.1f}[/white]"
             
+            # Add filter mode tag if available
+            symbol_str = opp['symbol']
+            if 'filter_mode' in opp:
+                mode = opp['filter_mode']
+                if mode == 'STRICT':
+                    symbol_str = f"[green]{symbol_str}[/green]"
+                elif mode == 'MODERATE':
+                    symbol_str = f"[yellow]{symbol_str}[/yellow]"
+                elif mode == 'RELAXED':
+                    symbol_str = f"[dim]{symbol_str}[/dim]"
+                elif mode == 'ETF':
+                    symbol_str = f"[blue]{symbol_str}[/blue]"
+            
             table.add_row(
                 str(i),
-                opp['symbol'],
+                symbol_str,
                 contract_desc,
                 score_str,
                 f"{opp.get('gt_ratio', 0):.2f}",
@@ -661,13 +674,19 @@ class OptionsScannnerDashboard:
         legend = Panel(
             Text.from_markup(
                 "[bold]Score Components:[/bold]\n"
-                "• GTR: Gamma/Theta Ratio (50% weight) - Higher = More explosive\n"
-                "• IVR: IV Rank (30% weight) - Higher = More volatility expected\n"
-                "• LIQ: Liquidity Score (20% weight) - Higher = Easier to trade\n"
+                "• GTR: Gamma/Theta Ratio (45-50% weight) - Higher = More explosive\n"
+                "• IVR: IV Rank (25-30% weight) - Higher = More volatility expected\n"
+                "• LIQ: Liquidity Score (15-20% weight) - Higher = Easier to trade\n"
+                "• MOM: Momentum Score (10% weight) - Technical strength\n"
                 "• PRICE_ADJ: Price penalty applied to avoid expensive outliers\n\n"
+                "[bold]Filter Modes (Symbol Colors):[/bold]\n"
+                "• [green]Green[/green]: STRICT mode (Beta>1.2, IVR>70%)\n"
+                "• [yellow]Yellow[/yellow]: MODERATE mode (Beta>1.1, IVR>60%)\n"
+                "• [dim]Gray[/dim]: RELAXED mode (Beta>1.0, IVR>50%)\n"
+                "• [blue]Blue[/blue]: High-volatility ETF\n\n"
                 "[bold]Key Metrics:[/bold]\n"
                 "• G/T: Gamma/Theta ratio - The higher, the more leverage\n"
-                "• Delta: Option sensitivity to stock price (0.15-0.45 target)\n"
+                "• Delta: Option sensitivity to stock price (adaptive range)\n"
                 "• Risk: Maximum loss per contract if expires worthless"
             ),
             title="📊 Understanding the Metrics",

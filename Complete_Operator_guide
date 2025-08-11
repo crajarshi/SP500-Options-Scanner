@@ -129,8 +129,56 @@ The **S\&P 500 Intraday Options Scanner** is a Python-based tool designed to:
 
 ---
 
+## 7. Maximum Profit Scanner (`--max-profit` flag)
+
+### Overview
+High-risk, high-reward scanner for explosive short-term options (7-21 DTE, high gamma).
+
+### Adaptive Filtering System (v2.0)
+The scanner automatically tries multiple threshold levels:
+
+1. **STRICT Mode** (Green symbols):
+   - Beta > 1.2, IV Rank > 70%
+   - Delta: 0.15-0.45, DTE: 7-21
+   - Highest conviction trades
+
+2. **MODERATE Mode** (Yellow symbols):
+   - Beta > 1.1, IV Rank > 60%
+   - Delta: 0.12-0.48, DTE: 5-23
+   - Balanced opportunities
+
+3. **RELAXED Mode** (Gray symbols):
+   - Beta > 1.0, IV Rank > 50%
+   - Delta: 0.10-0.50, DTE: 5-25
+   - Broader search
+
+4. **ETF Fallback** (Blue symbols):
+   - Includes SPY, QQQ, IWM, etc.
+   - When no stocks qualify
+
+### Enhanced Scoring (45% GTR + 25% IVR + 15% LIQ + 10% Momentum + 5% Earnings)
+- **GTR**: Gamma/Theta ratio (explosive potential)
+- **IVR**: IV Rank (volatility expectation)
+- **LIQ**: Liquidity score (tradability)
+- **MOM**: Technical momentum (NEW)
+- **EARN**: Earnings proximity boost (NEW)
+
+### Interpreting Results
+- **Score 80-100**: Excellent opportunity
+- **Score 60-79**: Good setup
+- **Color coding**: Shows which filter tier found the opportunity
+- **Near-misses**: Contracts that barely missed criteria
+
+### Risk Management
+- Position size: 50% of normal
+- Max 3 trades per day
+- Shows max loss per contract
+
+---
+
 ## Tool Operating Flow (Operator Steps)
 
+### Standard Scanner
 1. Launch tool (`python sp500_options_scanner.py [flags]`).
 2. View **Market Regime** indicator.
 3. Observe **Top Options Signals** list.
@@ -139,6 +187,15 @@ The **S\&P 500 Intraday Options Scanner** is a Python-based tool designed to:
 6. Use results to inform options trading decisions.
 7. Save outputs (`CSV`, logs) for audit and review.
 8. Repeat every 30–60 minutes or use continuous mode for regular cadence.
+
+### Maximum Profit Scanner
+1. Launch with `--max-profit` flag.
+2. Scanner automatically tries STRICT → MODERATE → RELAXED → ETFs.
+3. Review color-coded results (Green = highest conviction).
+4. Check score breakdown and G/T ratio.
+5. Verify liquidity metrics (spread, OI, volume).
+6. Use 50% position sizing for selected trades.
+7. Monitor closely due to theta decay.
 
 ---
 

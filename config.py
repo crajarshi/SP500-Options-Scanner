@@ -156,11 +156,37 @@ COLOR_AVOID = 'red'
 # High-gamma, short-dated options scanner for explosive opportunities
 # ============================================================================
 
-# Stock Selection Criteria
+# Stock Selection Criteria - STRICT MODE (Default)
 MAX_PROFIT_BETA_THRESHOLD = 1.2                    # Minimum beta vs SPY
 MAX_PROFIT_IV_RANK_THRESHOLD = 70                  # Minimum IV rank (0-100 scale)
 MAX_PROFIT_MIN_STOCK_DAILY_VOLUME = 300000        # Lowered for mid-caps
 MAX_PROFIT_MIN_STOCK_PRICE = 5.0                  # Avoid penny stocks
+
+# MODERATE MODE Thresholds (Auto-fallback level 1)
+MAX_PROFIT_MODERATE_BETA = 1.1                    # Slightly lower beta
+MAX_PROFIT_MODERATE_IV_RANK = 60                  # Moderate IV requirement
+MAX_PROFIT_MODERATE_VOLUME = 250000               # Slightly lower volume
+MAX_PROFIT_MODERATE_DELTA_MIN = 0.12              # Wider delta range
+MAX_PROFIT_MODERATE_DELTA_MAX = 0.48
+MAX_PROFIT_MODERATE_DTE_MIN = 5                   # Wider expiration window
+MAX_PROFIT_MODERATE_DTE_MAX = 23
+
+# RELAXED MODE Thresholds (Auto-fallback level 2)
+MAX_PROFIT_RELAXED_BETA = 1.0                     # Market beta or higher
+MAX_PROFIT_RELAXED_IV_RANK = 50                   # Lower IV threshold
+MAX_PROFIT_RELAXED_VOLUME = 200000                # Lower volume requirement
+MAX_PROFIT_RELAXED_DELTA_MIN = 0.10               # Even wider delta range
+MAX_PROFIT_RELAXED_DELTA_MAX = 0.50
+MAX_PROFIT_RELAXED_DTE_MIN = 5                    # Maximum flexibility
+MAX_PROFIT_RELAXED_DTE_MAX = 25
+
+# High-Volatility ETFs to Include
+MAX_PROFIT_ETFS = ['SPY', 'QQQ', 'IWM', 'XLF', 'SMH', 'ARKK', 'XLE', 'GDX', 'TLT', 'VXX']
+
+# Adaptive Mode Settings
+MAX_PROFIT_AUTO_ADAPT = True                      # Automatically relax filters if no results
+MAX_PROFIT_SHOW_NEAR_MISSES = True               # Show contracts that almost qualified
+MAX_PROFIT_NEAR_MISS_COUNT = 5                   # Number of near misses to display
 
 # Options Selection - Two-stage filtering
 MAX_PROFIT_DELTA_SCAN_MIN = 0.10                  # Wide initial scan range
@@ -183,10 +209,18 @@ MAX_PROFIT_OI_REF = 1000                          # Reference OI for log normali
 MAX_PROFIT_VOL_REF = 50                           # Reference volume for log normalization
 MAX_PROFIT_EPSILON = 1e-6                         # Stability guard for division
 
-# Scoring Weights - Main Components (must sum close to 1.0)
+# Scoring Weights - Main Components (adaptive based on mode)
+# STRICT MODE Weights (original)
 MAX_PROFIT_GTR_WEIGHT = 0.50                      # Gamma/Theta ratio weight
 MAX_PROFIT_IVR_WEIGHT = 0.30                      # IV Rank weight  
 MAX_PROFIT_LIQ_WEIGHT = 0.20                      # Liquidity composite weight
+
+# ENHANCED MODE Weights (with momentum/earnings)
+MAX_PROFIT_GTR_WEIGHT_ENHANCED = 0.45             # Reduced for new factors
+MAX_PROFIT_IVR_WEIGHT_ENHANCED = 0.25             # Reduced for new factors
+MAX_PROFIT_LIQ_WEIGHT_ENHANCED = 0.15             # Reduced for new factors
+MAX_PROFIT_MOMENTUM_WEIGHT = 0.10                 # Technical momentum weight
+MAX_PROFIT_EARNINGS_WEIGHT = 0.05                 # Earnings proximity weight
 
 # Liquidity Sub-weights (must sum to 1.0)
 MAX_PROFIT_LIQ_OI_WEIGHT = 0.40                   # Open interest weight

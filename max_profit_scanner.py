@@ -89,7 +89,12 @@ class MaxProfitScanner:
         self.skip_counter = {'total': 0}
         self.skip_reasons = []
         
-        logger.info("MaxProfitScanner initialized")
+        # Adaptive filtering
+        self.current_mode = 'strict'
+        self.near_misses = []
+        self.momentum_cache = {}
+        
+        logger.info("MaxProfitScanner initialized with adaptive filtering")
     
     def _load_config(self):
         """Load configuration from config module"""
@@ -144,11 +149,50 @@ class MaxProfitScanner:
         self.output_dir = config.MAX_PROFIT_OUTPUT_DIR
         self.log_skipped = config.MAX_PROFIT_LOG_SKIPPED
         self.cache_minutes = config.MAX_PROFIT_CACHE_MINUTES
+        
+        # Adaptive settings
+        self.auto_adapt = config.MAX_PROFIT_AUTO_ADAPT
+        self.show_near_misses = config.MAX_PROFIT_SHOW_NEAR_MISSES
+        self.near_miss_count = config.MAX_PROFIT_NEAR_MISS_COUNT
+    
+    def update_thresholds(self, mode: str):
+        """Update thresholds based on adaptive mode"""
+        if mode == 'moderate':
+            logger.info("Switching to MODERATE mode thresholds")
+            self.beta_threshold = config.MAX_PROFIT_MODERATE_BETA
+            self.iv_rank_threshold = config.MAX_PROFIT_MODERATE_IV_RANK
+            self.min_stock_volume = config.MAX_PROFIT_MODERATE_VOLUME
+            self.delta_final_min = config.MAX_PROFIT_MODERATE_DELTA_MIN
+            self.delta_final_max = config.MAX_PROFIT_MODERATE_DELTA_MAX
+            self.min_expiry_days = config.MAX_PROFIT_MODERATE_DTE_MIN
+            self.max_expiry_days = config.MAX_PROFIT_MODERATE_DTE_MAX
+        elif mode == 'relaxed':
+            logger.info("Switching to RELAXED mode thresholds")
+            self.beta_threshold = config.MAX_PROFIT_RELAXED_BETA
+            self.iv_rank_threshold = config.MAX_PROFIT_RELAXED_IV_RANK
+            self.min_stock_volume = config.MAX_PROFIT_RELAXED_VOLUME
+            self.delta_final_min = config.MAX_PROFIT_RELAXED_DELTA_MIN
+            self.delta_final_max = config.MAX_PROFIT_RELAXED_DELTA_MAX
+            self.min_expiry_days = config.MAX_PROFIT_RELAXED_DTE_MIN
+            self.max_expiry_days = config.MAX_PROFIT_RELAXED_DTE_MAX
+        else:  # strict mode
+            logger.info("Using STRICT mode thresholds")
+            self.beta_threshold = config.MAX_PROFIT_BETA_THRESHOLD
+            self.iv_rank_threshold = config.MAX_PROFIT_IV_RANK_THRESHOLD
+            self.min_stock_volume = config.MAX_PROFIT_MIN_STOCK_DAILY_VOLUME
+            self.delta_final_min = config.MAX_PROFIT_DELTA_FINAL_MIN
+            self.delta_final_max = config.MAX_PROFIT_DELTA_FINAL_MAX
+            self.min_expiry_days = config.MAX_PROFIT_MIN_EXPIRY_DAYS
+            self.max_expiry_days = config.MAX_PROFIT_MAX_EXPIRY_DAYS
+        
+        self.current_mode = mode
     
     def calculate_final_score(self, contract: MaxProfitContract, 
-                             gtr_min: float, gtr_max: float) -> float:
+                             gtr_min: float, gtr_max: float, 
+                             momentum_score: float = 0.5,
+                             earnings_boost: float = 0.0) -> float:
         """
-        Calculate final normalized score using exact formula
+        Calculate final normalized score using exact formula with momentum/earnings
         
         Returns:
             Score in 0..1 range (multiply by 100 for display)
@@ -175,10 +219,19 @@ class MaxProfitScanner:
                     self.liq_spread_weight * spread_score)
         contract.liquidity_score = liquidity
         
-        # 5. Calculate raw score
-        raw = (self.gtr_weight * gtr_norm + 
-               self.ivr_weight * ivr + 
-               self.liq_weight * liquidity)
+        # 5. Calculate raw score with enhanced weights if momentum available
+        if momentum_score > 0 or earnings_boost > 0:
+            # Use enhanced weights
+            raw = (config.MAX_PROFIT_GTR_WEIGHT_ENHANCED * gtr_norm + 
+                   config.MAX_PROFIT_IVR_WEIGHT_ENHANCED * ivr + 
+                   config.MAX_PROFIT_LIQ_WEIGHT_ENHANCED * liquidity +
+                   config.MAX_PROFIT_MOMENTUM_WEIGHT * momentum_score +
+                   config.MAX_PROFIT_EARNINGS_WEIGHT * earnings_boost)
+        else:
+            # Use original weights
+            raw = (self.gtr_weight * gtr_norm + 
+                   self.ivr_weight * ivr + 
+                   self.liq_weight * liquidity)
         
         # 6. Apply price penalty (multiplicative)
         # Note: Price penalty should reduce score more for expensive options
@@ -522,8 +575,64 @@ class MaxProfitScanner:
         else:
             return 90
     
-    def _log_skip(self, identifier: str, reason: str, value: any = None):
-        """Log why a contract was skipped"""
+    def calculate_momentum_score(self, ticker: str) -> float:
+        """
+        Calculate momentum score based on technical indicators
+        Returns: Score between 0 and 1
+        """
+        if ticker in self.momentum_cache:
+            return self.momentum_cache[ticker]
+        
+        try:
+            # Get recent price data
+            df = self.data_provider.fetch_bars(ticker, timeframe='15Min', days_back=3)
+            if df is None or len(df) < 30:
+                return 0.5  # Neutral if no data
+            
+            # Simple momentum indicators
+            close_prices = df['close'].values
+            
+            # 1. Price trend (compare to 10-period average)
+            ma10 = np.mean(close_prices[-10:])
+            current = close_prices[-1]
+            trend_score = min(1.0, max(0, (current - ma10) / ma10 + 0.5))
+            
+            # 2. Relative strength (simplified RSI)
+            gains = []
+            losses = []
+            for i in range(1, min(14, len(close_prices))):
+                diff = close_prices[i] - close_prices[i-1]
+                if diff > 0:
+                    gains.append(diff)
+                else:
+                    losses.append(abs(diff))
+            
+            avg_gain = np.mean(gains) if gains else 0
+            avg_loss = np.mean(losses) if losses else 1
+            rs = avg_gain / avg_loss if avg_loss > 0 else 1
+            rsi = 1 - (1 / (1 + rs))  # Normalized to 0-1
+            
+            # 3. Volume surge (if available)
+            if 'volume' in df.columns:
+                volumes = df['volume'].values
+                recent_vol = np.mean(volumes[-5:])
+                avg_vol = np.mean(volumes)
+                vol_score = min(1.0, recent_vol / (avg_vol + 1))
+            else:
+                vol_score = 0.5
+            
+            # Combine scores
+            momentum = (trend_score * 0.4 + rsi * 0.4 + vol_score * 0.2)
+            
+            self.momentum_cache[ticker] = momentum
+            return momentum
+            
+        except Exception as e:
+            logger.debug(f"Error calculating momentum for {ticker}: {e}")
+            return 0.5  # Default neutral score
+    
+    def _log_skip(self, identifier: str, reason: str, value: any = None, contract: MaxProfitContract = None):
+        """Log why a contract was skipped and track near misses"""
         if self.log_skipped:
             self.skip_counter['total'] += 1
             self.skip_counter[reason] = self.skip_counter.get(reason, 0) + 1
@@ -535,15 +644,137 @@ class MaxProfitScanner:
                     'value': value,
                     'timestamp': datetime.now()
                 })
+            
+            # Track near misses
+            if contract and self.show_near_misses:
+                self._check_near_miss(contract, reason, value)
+    
+    def _check_near_miss(self, contract: MaxProfitContract, reason: str, value: any):
+        """Check if contract is a near miss (fails only 1-2 criteria)"""
+        miss_count = 0
+        miss_details = []
+        
+        # Check each criterion
+        if abs(contract.delta) < self.delta_final_min * 0.9 or abs(contract.delta) > self.delta_final_max * 1.1:
+            miss_count += 1
+            miss_details.append(f"Delta: {contract.delta:.2f} (need {self.delta_final_min:.2f}-{self.delta_final_max:.2f})")
+        
+        if contract.iv_rank < self.iv_rank_threshold * 0.9:
+            miss_count += 1
+            miss_details.append(f"IVR: {contract.iv_rank:.0f}% (need {self.iv_rank_threshold:.0f}%)")
+        
+        if contract.days_to_expiry < self.min_expiry_days or contract.days_to_expiry > self.max_expiry_days:
+            miss_count += 1
+            miss_details.append(f"DTE: {contract.days_to_expiry} (need {self.min_expiry_days}-{self.max_expiry_days})")
+        
+        # If only 1-2 criteria failed, track as near miss
+        if miss_count <= 2 and len(self.near_misses) < self.near_miss_count:
+            self.near_misses.append({
+                'contract': contract,
+                'failures': miss_details,
+                'miss_count': miss_count
+            })
+    
+    def run_adaptive_scan(self) -> List[Dict]:
+        """
+        Adaptive scan that automatically relaxes criteria if no results found
+        """
+        logger.info("=" * 60)
+        logger.info("Starting ADAPTIVE Maximum Profit Scanner")
+        logger.info("Will automatically adjust thresholds if needed...")
+        logger.info("=" * 60)
+        
+        modes = ['strict', 'moderate', 'relaxed']
+        all_results = []
+        
+        for mode in modes:
+            self.update_thresholds(mode)
+            logger.info(f"\n🔍 Trying {mode.upper()} mode...")
+            
+            results = self.run_scan()
+            
+            if results:
+                logger.info(f"✅ Found {len(results)} opportunities in {mode} mode")
+                # Add mode tag to results
+                for r in results:
+                    r['filter_mode'] = mode.upper()
+                all_results.extend(results)
+                
+                # If we found enough in strict/moderate, stop
+                if mode != 'relaxed' and len(all_results) >= 3:
+                    break
+            else:
+                logger.info(f"No results in {mode} mode, trying next level...")
+        
+        # Include ETFs if still no results
+        if not all_results and config.MAX_PROFIT_ETFS:
+            logger.info("\n🔍 Adding high-volatility ETFs to search...")
+            etf_results = self._scan_etfs()
+            if etf_results:
+                for r in etf_results:
+                    r['filter_mode'] = 'ETF'
+                all_results.extend(etf_results)
+        
+        # Sort by score and limit
+        all_results.sort(key=lambda x: x['score'], reverse=True)
+        top_results = all_results[:self.top_results]
+        
+        # Add near misses if enabled
+        if self.show_near_misses and self.near_misses:
+            logger.info(f"\n📊 Also found {len(self.near_misses)} near-miss contracts")
+        
+        return top_results
+    
+    def _scan_etfs(self) -> List[Dict]:
+        """Scan high-volatility ETFs with relaxed criteria"""
+        self.update_thresholds('relaxed')
+        # Override beta requirement for ETFs
+        original_beta = self.beta_threshold
+        self.beta_threshold = 0.8  # Lower beta for ETFs
+        
+        results = []
+        for etf in config.MAX_PROFIT_ETFS:
+            try:
+                contracts = self.fetch_option_contracts(etf)
+                if contracts:
+                    # Process similar to regular scan
+                    for contract in contracts:
+                        result = self._process_contract(contract)
+                        if result:
+                            results.append(result)
+            except Exception as e:
+                logger.debug(f"Error scanning ETF {etf}: {e}")
+        
+        self.beta_threshold = original_beta
+        return results
+    
+    def _process_contract(self, contract: MaxProfitContract) -> Optional[Dict]:
+        """Process a single contract and return formatted result if valid"""
+        try:
+            # Check basic criteria
+            if contract.delta < self.delta_final_min or contract.delta > self.delta_final_max:
+                return None
+            if contract.days_to_expiry < self.min_expiry_days or contract.days_to_expiry > self.max_expiry_days:
+                return None
+            if contract.iv_rank < self.iv_rank_threshold:
+                return None
+            
+            # Calculate score (simplified for single contract)
+            gtr = contract.gamma / max(abs(contract.theta), self.epsilon)
+            contract.gamma_theta_ratio = gtr
+            contract.final_score = self.calculate_final_score(contract, gtr * 0.8, gtr * 1.2)
+            
+            # Format result
+            return self._contract_to_dict(contract)
+        except Exception as e:
+            logger.debug(f"Error processing contract: {e}")
+            return None
     
     def run_scan(self) -> List[Dict]:
         """
         Main scan execution with all optimizations
         """
-        logger.info("=" * 60)
-        logger.info("Starting Maximum Profit Scanner")
-        logger.info("Finding high-gamma, explosive opportunities...")
-        logger.info("=" * 60)
+        logger.info("Starting scan with current thresholds...")
         
         scan_start = time.time()
         
@@ -608,9 +839,11 @@ class MaxProfitScanner:
         gtr_min, gtr_max = self.winsorize_gtr_values(high_iv_contracts)
         logger.info(f"GTR range after winsorization: {gtr_min:.2f} - {gtr_max:.2f}")
         
-        # 8. Score all contracts
+        # 8. Score all contracts with momentum
         for contract in high_iv_contracts:
-            contract.final_score = self.calculate_final_score(contract, gtr_min, gtr_max)
+            # Get momentum score for the ticker
+            momentum = self.calculate_momentum_score(contract.symbol)
+            contract.final_score = self.calculate_final_score(contract, gtr_min, gtr_max, momentum_score=momentum)
         
         # 9. Select top contract per ticker
         best_by_ticker = {}

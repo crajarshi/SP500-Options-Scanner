@@ -2,9 +2,16 @@
 
 ## Overview
 
-The Maximum Profit Scanner is a specialized high-risk, high-reward options scanner designed to identify explosive short-term opportunities through high-gamma, short-dated options. Unlike the main scanner's systematic approach, this scanner focuses on finding "home run" trades with maximum leverage potential.
+The Maximum Profit Scanner (v2.0) is an adaptive high-risk, high-reward options scanner designed to identify explosive short-term opportunities through high-gamma, short-dated options. The scanner now features intelligent filtering that automatically adjusts criteria to find opportunities in any market condition.
 
 **⚠️ WARNING**: This scanner identifies highly speculative trades with significant risk of total loss. Use only with capital you can afford to lose.
+
+### Key Improvements in v2.0
+- **Adaptive Filtering**: Automatically tries multiple threshold levels
+- **Never Empty Results**: Guaranteed to find opportunities through progressive relaxation
+- **Momentum Integration**: Includes technical momentum in scoring
+- **ETF Coverage**: Falls back to high-volatility ETFs when needed
+- **Near-Miss Tracking**: Shows contracts that barely missed criteria
 
 ## Strategy Philosophy
 
@@ -32,17 +39,25 @@ python sp500_options_scanner.py --finnhub --max-profit
 
 ## Scoring Algorithm
 
-### Formula
-The scanner uses a normalized scoring formula with multiple components:
+### Enhanced Formula (v2.0)
+The scanner now uses an adaptive scoring formula that includes momentum:
 
+#### Standard Mode:
 ```
 Final Score = (0.5 × GTR_norm + 0.3 × IVR + 0.2 × LIQ) × (1 - 0.15 × price_penalty)
 ```
 
+#### Enhanced Mode (with momentum data):
+```
+Final Score = (0.45 × GTR_norm + 0.25 × IVR + 0.15 × LIQ + 0.10 × MOM + 0.05 × EARN) × (1 - 0.15 × price_penalty)
+```
+
 Where:
-- **GTR_norm**: Normalized Gamma/Theta Ratio (50% weight)
-- **IVR**: IV Rank percentile (30% weight)
-- **LIQ**: Liquidity composite score (20% weight)
+- **GTR_norm**: Normalized Gamma/Theta Ratio (45-50% weight)
+- **IVR**: IV Rank percentile (25-30% weight)
+- **LIQ**: Liquidity composite score (15-20% weight)
+- **MOM**: Momentum score from technical indicators (10% weight)
+- **EARN**: Earnings proximity boost (5% weight)
 - **price_penalty**: Reduces score for expensive options (15% impact)
 
 ### Components Breakdown
@@ -70,25 +85,43 @@ Composite of three factors:
 - Formula: `1 / (1 + log(1 + mid_price))`
 - Applied as multiplicative factor
 
-## Filtering Criteria
+## Adaptive Filtering System (NEW)
 
-### Stock Selection
-| Criteria | Threshold | Description |
-|----------|-----------|-------------|
-| Beta | > 1.2 | Volatility vs SPY |
-| IV Rank | > 70% | High implied volatility |
-| Daily Volume | > 300,000 | Liquidity requirement |
-| Stock Price | > $5 | No penny stocks |
+The scanner now uses a 3-tier adaptive filtering system that automatically relaxes criteria if no opportunities are found:
 
-### Options Selection
-| Criteria | Scan Range | Final Range | Description |
-|----------|------------|-------------|-------------|
-| Delta | 0.10-0.50 | 0.15-0.45 | Two-stage filtering |
-| Days to Expiry | 7-21 | 7-21 | Short-dated for gamma |
-| Open Interest | > 100 | > 100 | Minimum liquidity |
-| Avg Volume (5d) | > 5 | > 5 | Trading activity |
-| Bid-Ask Spread | < 15% | < 15% | Maximum spread |
-| Min Bid | > $0.05 | > $0.05 | No zero bids |
+### Tier 1: STRICT Mode (Default)
+| Criteria | Stock Threshold | Options Threshold | Description |
+|----------|----------------|-------------------|-------------|
+| Beta | > 1.2 | - | High volatility stocks |
+| IV Rank | > 70% | > 70% | Very high implied volatility |
+| Daily Volume | > 300,000 | - | Good liquidity |
+| Stock Price | > $5 | - | No penny stocks |
+| Delta | - | 0.15-0.45 | Slightly OTM |
+| Days to Expiry | - | 7-21 | Optimal gamma window |
+
+### Tier 2: MODERATE Mode (Auto-fallback)
+| Criteria | Stock Threshold | Options Threshold | Description |
+|----------|----------------|-------------------|-------------|
+| Beta | > 1.1 | - | Moderate volatility |
+| IV Rank | > 60% | > 60% | Above-average volatility |
+| Daily Volume | > 250,000 | - | Decent liquidity |
+| Delta | - | 0.12-0.48 | Wider range |
+| Days to Expiry | - | 5-23 | Slightly wider window |
+
+### Tier 3: RELAXED Mode (Final fallback)
+| Criteria | Stock Threshold | Options Threshold | Description |
+|----------|----------------|-------------------|-------------|
+| Beta | > 1.0 | - | Market beta or higher |
+| IV Rank | > 50% | > 50% | Median volatility |
+| Daily Volume | > 200,000 | - | Minimum liquidity |
+| Delta | - | 0.10-0.50 | Full OTM range |
+| Days to Expiry | - | 5-25 | Maximum flexibility |
+
+### ETF Fallback
+If no individual stocks qualify, the scanner includes high-volatility ETFs:
+- SPY, QQQ, IWM (Major indices)
+- XLF, SMH, XLE (Sector ETFs)
+- ARKK, GDX, TLT, VXX (Specialty ETFs)
 
 ## Risk Management
 
@@ -168,12 +201,42 @@ MAX_PROFIT_LIQ_WEIGHT = 0.20
 - Winsorization for outlier handling
 - Batch normalization for GTR
 
+## Interpreting Results
+
+### Color-Coded Symbols
+The scanner color-codes stock symbols to indicate which filter tier found them:
+- 🟢 **Green**: STRICT mode (highest conviction)
+- 🟡 **Yellow**: MODERATE mode (good opportunities)
+- ⬜ **Gray**: RELAXED mode (broader criteria)
+- 🔵 **Blue**: ETF (fallback opportunities)
+
+### Score Interpretation
+| Score | Quality | Action |
+|-------|---------|--------|
+| 80-100 | Excellent | Strong opportunity, consider full position |
+| 60-79 | Good | Solid setup, consider reduced position |
+| 40-59 | Fair | Marginal opportunity, extra caution |
+| < 40 | Poor | Usually filtered out |
+
+### Near-Miss Contracts
+When enabled, the scanner shows contracts that failed 1-2 criteria:
+- Review these for manual override decisions
+- Often just miss IV rank or delta thresholds
+- Can be valuable in trending markets
+
 ## Troubleshooting
 
-### No Results Found
-Possible causes:
-1. Market conditions don't meet criteria (low volatility)
-2. No stocks with beta > 1.2 and IV rank > 70%
+### No Results Found (Resolved in v2.0)
+The adaptive system now prevents empty results by:
+1. Automatically relaxing criteria through 3 tiers
+2. Including ETF fallback options
+3. Tracking near-misses for review
+
+### Still Getting Empty Results?
+Only happens if:
+1. API rate limits preventing data fetch
+2. No options data available (pre/post market)
+3. System error (check logs)
 3. Options lack liquidity (spread too wide, low OI)
 4. All contracts outside delta range
 

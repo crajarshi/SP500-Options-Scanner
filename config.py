@@ -126,6 +126,13 @@ OPTIONS_NEUTRAL_DELTA = 0.50  # Target delta for neutral/ATM contracts
 OPTIONS_MIN_OPEN_INTEREST = 100   # Minimum open interest for liquidity
 OPTIONS_MAX_SPREAD_PERCENT = 0.10  # Maximum 10% bid-ask spread
 
+# Non-Standard Contract Filtering (NEW - v2.2.1)
+OPTIONS_STANDARD_ONLY = True  # Filter out non-standard/adjusted contracts
+OPTIONS_MAX_STRIKE_DEVIATION = 0.5  # Max 50% deviation from stock price
+OPTIONS_MAX_PREMIUM_RATIO = 0.3  # Max premium 30% of stock price for OTM
+OPTIONS_MIN_PREMIUM = 0.01  # Minimum premium to consider valid
+OPTIONS_CONTRACT_SIZE = 100  # Standard contract size (shares per contract)
+
 # API Settings
 OPTIONS_CACHE_MINUTES = 10  # Cache options data for 10 minutes
 OPTIONS_API_DELAY = 0.5     # Delay between API calls in seconds

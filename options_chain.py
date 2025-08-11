@@ -99,6 +99,8 @@ class OptionsChainAnalyzer:
         self.risk_manager = risk_manager
         self.cache = {}  # Cache for options chains
         self.cache_expiry = {}  # Cache expiry times
+        self.filtered_contracts_count = 0  # Track filtered non-standard contracts
+        self.filtered_symbols = set()  # Track symbols with filtered contracts
         
     def get_optimal_contracts(self, symbol: str, signal_type: str, 
                              stock_price: float, scan_context: Dict = None) -> Optional[List[OptionsContract]]:
@@ -257,6 +259,54 @@ class OptionsChainAnalyzer:
         
         return contracts
     
+    def _is_standard_contract(self, contract_data: Dict, strike: float, stock_price: float = None) -> Tuple[bool, str]:
+        """
+        Check if a contract is standard (not adjusted from corporate actions)
+        
+        Args:
+            contract_data: Raw contract data
+            strike: Strike price
+            stock_price: Current stock price (optional)
+            
+        Returns:
+            Tuple of (is_standard, reason_if_not)
+        """
+        # Check if explicitly marked as non-standard
+        if not contract_data.get('is_standard', True):
+            return False, "non-standard contract (size != 100)"
+        
+        # Check contract size if provided
+        contract_size = contract_data.get('contract_size', 100)
+        if contract_size != config.OPTIONS_CONTRACT_SIZE:
+            return False, f"non-standard size: {contract_size}"
+        
+        # Check for reasonable strike price if stock price provided
+        if stock_price and stock_price > 0:
+            strike_deviation = abs(strike - stock_price) / stock_price
+            if strike_deviation > config.OPTIONS_MAX_STRIKE_DEVIATION:
+                return False, f"strike too far from stock price: ${strike:.2f} vs ${stock_price:.2f}"
+        
+        # Check for reasonable premium bounds
+        bid = contract_data.get('bid', 0)
+        ask = contract_data.get('ask', 0)
+        if bid > 0 and ask > 0:
+            mid_price = (bid + ask) / 2
+            
+            # Check minimum premium
+            if mid_price < config.OPTIONS_MIN_PREMIUM:
+                return False, f"premium too low: ${mid_price:.2f}"
+            
+            # Check maximum premium ratio for OTM options
+            if stock_price and stock_price > 0:
+                premium_ratio = mid_price / stock_price
+                if premium_ratio > config.OPTIONS_MAX_PREMIUM_RATIO:
+                    # Check if it's actually OTM before rejecting
+                    delta = abs(contract_data.get('delta', 0.5))
+                    if delta < 0.4:  # Likely OTM
+                        return False, f"premium too high for OTM: ${mid_price:.2f} ({premium_ratio:.1%} of stock)"
+        
+        return True, ""
+    
     def _parse_options_data(self, chain_data: Dict, symbol: str, scan_context: Dict = None) -> List[OptionsContract]:
         """
         Parse raw options data into OptionsContract objects
@@ -269,6 +319,14 @@ class OptionsChainAnalyzer:
             List of OptionsContract objects
         """
         contracts = []
+        filtered_count = 0
+        
+        # Get current stock price for validation
+        stock_price = None
+        if hasattr(self.data_provider, 'fetch_latest_quote'):
+            quote = self.data_provider.fetch_latest_quote(symbol)
+            if quote:
+                stock_price = (quote.get('ap', 0) + quote.get('bp', 0)) / 2
         
         # Use reference date from context or current time
         reference_date = scan_context['reference_date'] if scan_context else datetime.now()
@@ -283,22 +341,48 @@ class OptionsChainAnalyzer:
                 continue
             
             for strike_price, contract_data in strikes.items():
+                strike = float(strike_price)
+                
                 # Process calls
                 if 'call' in contract_data:
                     call = contract_data['call']
+                    
+                    # Check if standard contract (filter non-standard)
+                    if config.OPTIONS_STANDARD_ONLY:
+                        is_standard, reason = self._is_standard_contract(call, strike, stock_price)
+                        if not is_standard:
+                            logger.debug(f"Filtered {symbol} call @ ${strike}: {reason}")
+                            filtered_count += 1
+                            continue
+                    
                     contracts.append(self._create_contract(
-                        symbol, float(strike_price), expiration_date, 
+                        symbol, strike, expiration_date, 
                         'call', call, days_to_expiry
                     ))
                 
                 # Process puts
                 if 'put' in contract_data:
                     put = contract_data['put']
+                    
+                    # Check if standard contract (filter non-standard)
+                    if config.OPTIONS_STANDARD_ONLY:
+                        is_standard, reason = self._is_standard_contract(put, strike, stock_price)
+                        if not is_standard:
+                            logger.debug(f"Filtered {symbol} put @ ${strike}: {reason}")
+                            filtered_count += 1
+                            continue
+                    
                     contracts.append(self._create_contract(
-                        symbol, float(strike_price), expiration_date,
+                        symbol, strike, expiration_date,
                         'put', put, days_to_expiry
                     ))
         
+        if filtered_count > 0:
+            logger.info(f"Filtered {filtered_count} non-standard contracts for {symbol}")
+            self.filtered_contracts_count += filtered_count
+            self.filtered_symbols.add(symbol)
+        
+        logger.info(f"Parsed {len(contracts)} standard options contracts for {symbol}")
         return contracts
     
     def _create_contract(self, symbol: str, strike: float, expiration: str,
@@ -354,6 +438,24 @@ class OptionsChainAnalyzer:
             days_to_expiry=days_to_expiry,
             liquidity_score=liquidity_score
         )
+    
+    def get_filter_stats(self) -> Dict:
+        """
+        Get statistics about filtered non-standard contracts
+        
+        Returns:
+            Dictionary with filter statistics
+        """
+        return {
+            'filtered_count': self.filtered_contracts_count,
+            'affected_symbols': list(self.filtered_symbols),
+            'affected_symbols_count': len(self.filtered_symbols)
+        }
+    
+    def reset_filter_stats(self):
+        """Reset filter statistics"""
+        self.filtered_contracts_count = 0
+        self.filtered_symbols = set()
     
     def _calculate_liquidity_score(self, open_interest: int, 
                                   spread_percent: float, volume: int) -> float:

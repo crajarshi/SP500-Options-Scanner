@@ -439,6 +439,14 @@ class AlpacaDataProvider:
                 latest_quote = snapshot.get('latestQuote', {})
                 greeks = snapshot.get('greeks', {})
                 
+                # Check for contract size and deliverables (standard is 100 shares)
+                # Alpaca may provide this in the snapshot
+                contract_size = snapshot.get('size', 100)  # Default to 100 if not provided
+                deliverables = snapshot.get('deliverables', None)
+                
+                # Mark as non-standard if size is not 100 or has special deliverables
+                is_standard = (contract_size == 100 and deliverables is None)
+                
                 # Add Greeks and market data
                 chain[exp_date][strike][contract_type_full] = {
                     'symbol': contract_symbol,
@@ -451,8 +459,14 @@ class AlpacaDataProvider:
                     'gamma': greeks.get('gamma', 0),
                     'theta': greeks.get('theta', 0),
                     'vega': greeks.get('vega', 0),
-                    'implied_volatility': snapshot.get('impliedVolatility', 0)
+                    'implied_volatility': snapshot.get('impliedVolatility', 0),
+                    'contract_size': contract_size,  # Add contract size for filtering
+                    'is_standard': is_standard  # Flag for standard contracts
                 }
+                
+                # Log if non-standard contract detected
+                if not is_standard:
+                    logger.debug(f"Non-standard contract detected: {contract_symbol} (size={contract_size})")
             
             if not chain:
                 # No data from API, fall back to simulated
@@ -529,7 +543,9 @@ class AlpacaDataProvider:
                         'volume': np.random.randint(0, 1000),
                         'open_interest': np.random.randint(100, 5000),
                         'delta': call_delta,
-                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05)
+                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05),
+                        'contract_size': 100,  # Standard contract
+                        'is_standard': True
                     },
                     'put': {
                         'bid': round(put_mid * (1 - spread_pct/2), 2),
@@ -538,7 +554,9 @@ class AlpacaDataProvider:
                         'volume': np.random.randint(0, 1000),
                         'open_interest': np.random.randint(100, 5000),
                         'delta': put_delta,
-                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05)
+                        'implied_volatility': 0.30 + np.random.uniform(-0.05, 0.05),
+                        'contract_size': 100,  # Standard contract
+                        'is_standard': True
                     }
                 }
         

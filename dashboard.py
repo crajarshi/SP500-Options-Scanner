@@ -618,6 +618,10 @@ class OptionsScannnerDashboard:
                     symbol_str = f"[yellow]{symbol_str}[/yellow]"
                 elif mode == 'RELAXED':
                     symbol_str = f"[dim]{symbol_str}[/dim]"
+                elif mode == 'ULTRA':
+                    symbol_str = f"[bold red]{symbol_str}⚠[/bold red]"
+                elif mode == 'BEST_AVAILABLE':
+                    symbol_str = f"[bold red]{symbol_str}⚠⚠[/bold red]"
                 elif mode == 'ETF':
                     symbol_str = f"[blue]{symbol_str}[/blue]"
             
@@ -644,18 +648,36 @@ class OptionsScannnerDashboard:
         # Clear console
         self.console.clear()
         
-        # Display warning panel
-        warning_panel = Panel(
-            Text.from_markup(
+        # Check if ultra mode or best available results
+        has_ultra = any(o.get('filter_mode') == 'ULTRA' for o in opportunities)
+        has_best_available = any(o.get('filter_mode') == 'BEST_AVAILABLE' for o in opportunities)
+        
+        # Display appropriate warning panel
+        if has_best_available or has_ultra:
+            warning_text = (
+                "[bold red]⚠️  ULTRA MODE / BEST AVAILABLE - EXTREME CAUTION ⚠️[/bold red]\n\n"
+                "[bold yellow]Scanner used relaxed criteria to find results![/bold yellow]\n"
+                "[red]• These contracts are BELOW normal quality thresholds[/red]\n"
+                "[red]• Significantly higher risk than usual recommendations[/red]\n"
+                "[red]• Only consider if no other opportunities exist[/red]\n\n"
+            )
+        else:
+            warning_text = (
                 "[bold red]⚠️  MAXIMUM PROFIT SCANNER - HIGH RISK WARNING ⚠️[/bold red]\n\n"
                 "[yellow]These are speculative, short-term options with high gamma.[/yellow]\n"
-                "[yellow]• Explosive potential but also high risk of total loss[/yellow]\n"
-                "[yellow]• Position size should be 50% of normal[/yellow]\n"
-                "[yellow]• Monitor positions closely - theta decay is significant[/yellow]\n"
-                "[yellow]• Only trade with capital you can afford to lose[/yellow]\n\n"
-                "[dim]Strategy: Buy slightly OTM options (delta 0.15-0.45) with 7-21 DTE[/dim]\n"
-                "[dim]on high-beta stocks (>1.2) with elevated IV rank (>70%)[/dim]"
-            ),
+            )
+        
+        warning_text += (
+            "[yellow]• Explosive potential but also high risk of total loss[/yellow]\n"
+            "[yellow]• Position size should be 50% of normal[/yellow]\n"
+            "[yellow]• Monitor positions closely - theta decay is significant[/yellow]\n"
+            "[yellow]• Only trade with capital you can afford to lose[/yellow]\n\n"
+            "[dim]Strategy: Buy slightly OTM options (delta 0.15-0.45) with 7-21 DTE[/dim]\n"
+            "[dim]on high-beta stocks (>1.2) with elevated IV rank (>70%)[/dim]"
+        )
+        
+        warning_panel = Panel(
+            Text.from_markup(warning_text),
             box=box.HEAVY,
             border_style="red",
             padding=(1, 2)
@@ -665,6 +687,9 @@ class OptionsScannnerDashboard:
         # Display opportunities table
         table = self.create_max_profit_table(opportunities)
         self.console.print(table)
+        
+        # Display individual contract warnings if any exist
+        self._display_contract_warnings(opportunities)
         
         # Display key metrics panel if we have results
         if opportunities:
@@ -680,9 +705,11 @@ class OptionsScannnerDashboard:
                 "• MOM: Momentum Score (10% weight) - Technical strength\n"
                 "• PRICE_ADJ: Price penalty applied to avoid expensive outliers\n\n"
                 "[bold]Filter Modes (Symbol Colors):[/bold]\n"
-                "• [green]Green[/green]: STRICT mode (Beta>1.2, IVR>70%)\n"
-                "• [yellow]Yellow[/yellow]: MODERATE mode (Beta>1.1, IVR>60%)\n"
-                "• [dim]Gray[/dim]: RELAXED mode (Beta>1.0, IVR>50%)\n"
+                "• [green]Green[/green]: STRICT mode (Beta>1.2, IVR>70%) - Highest quality\n"
+                "• [yellow]Yellow[/yellow]: MODERATE mode (Beta>1.1, IVR>60%) - Good quality\n"
+                "• [dim]Gray[/dim]: RELAXED mode (Beta>1.0, IVR>50%) - Acceptable\n"
+                "• [bold red]Red ⚠[/bold red]: ULTRA mode (Beta>0.8, IVR>30%) - Below thresholds\n"
+                "• [bold red]Red ⚠⚠[/bold red]: BEST AVAILABLE - Absolute minimum quality\n"
                 "• [blue]Blue[/blue]: High-volatility ETF\n\n"
                 "[bold]Key Metrics:[/bold]\n"
                 "• G/T: Gamma/Theta ratio - The higher, the more leverage\n"
@@ -694,6 +721,27 @@ class OptionsScannnerDashboard:
             border_style="dim"
         )
         self.console.print(legend)
+    
+    def _display_contract_warnings(self, opportunities: List[Dict]):
+        """Display individual contract warnings if they exist"""
+        warnings_to_display = []
+        
+        for i, opp in enumerate(opportunities, 1):
+            if 'warnings' in opp and opp['warnings']:
+                warning_text = f"[bold]#{i} {opp['symbol']}:[/bold]\n"
+                for warning in opp['warnings']:
+                    warning_text += f"  • {warning}\n"
+                warnings_to_display.append(warning_text)
+        
+        if warnings_to_display:
+            warnings_panel = Panel(
+                Text.from_markup("\n".join(warnings_to_display)),
+                title="⚠️ Contract-Specific Warnings",
+                box=box.MINIMAL,
+                border_style="yellow",
+                padding=(0, 2)
+            )
+            self.console.print(warnings_panel)
     
     def _display_max_profit_metrics(self, opportunities: List[Dict]):
         """Display summary metrics for max profit opportunities"""

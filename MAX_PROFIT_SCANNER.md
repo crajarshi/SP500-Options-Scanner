@@ -2,16 +2,18 @@
 
 ## Overview
 
-The Maximum Profit Scanner (v2.0) is an adaptive high-risk, high-reward options scanner designed to identify explosive short-term opportunities through high-gamma, short-dated options. The scanner now features intelligent filtering that automatically adjusts criteria to find opportunities in any market condition.
+The Maximum Profit Scanner (v2.2) is an advanced adaptive high-risk, high-reward options scanner designed to identify explosive short-term opportunities through high-gamma, short-dated options. The scanner features intelligent 4-tier filtering with ultra mode and guaranteed results through best-available logic.
 
 **⚠️ WARNING**: This scanner identifies highly speculative trades with significant risk of total loss. Use only with capital you can afford to lose.
 
-### Key Improvements in v2.0
-- **Adaptive Filtering**: Automatically tries multiple threshold levels
-- **Never Empty Results**: Guaranteed to find opportunities through progressive relaxation
-- **Momentum Integration**: Includes technical momentum in scoring
-- **ETF Coverage**: Falls back to high-volatility ETFs when needed
-- **Near-Miss Tracking**: Shows contracts that barely missed criteria
+### Key Features in v2.2
+- **4-Tier Adaptive Filtering**: STRICT → MODERATE → RELAXED → ULTRA
+- **Guaranteed Results**: Never returns empty through best-available logic
+- **Smart Retry Mechanism**: Exponential backoff with rate limit handling
+- **Dynamic Penalty System**: Adjusts scores based on quality in ultra mode
+- **Quality Warnings**: Clear indicators when results fall below thresholds
+- **Force Results Mode**: CLI option to guarantee minimum results
+- **Configurable Quality Floor**: Prevent showing absolute garbage
 
 ## Strategy Philosophy
 
@@ -26,6 +28,18 @@ The scanner targets:
 ### Basic Command
 ```bash
 python sp500_options_scanner.py --max-profit
+```
+
+### With Force Results (v2.2)
+```bash
+# Force at least 10 results regardless of quality
+python sp500_options_scanner.py --max-profit --force-results --min-results 10
+
+# Override quality floor settings
+python sp500_options_scanner.py --max-profit --quality-floor min_beta:0.3 --quality-floor min_oi:5
+
+# Combined: force 7 results with custom floor
+python sp500_options_scanner.py --max-profit --force-results --min-results 7 --quality-floor min_volume:5000
 ```
 
 ### With Additional Options
@@ -85,9 +99,9 @@ Composite of three factors:
 - Formula: `1 / (1 + log(1 + mid_price))`
 - Applied as multiplicative factor
 
-## Adaptive Filtering System (NEW)
+## Adaptive Filtering System (v2.2)
 
-The scanner now uses a 3-tier adaptive filtering system that automatically relaxes criteria if no opportunities are found:
+The scanner uses a 4-tier adaptive filtering system that automatically relaxes criteria to guarantee results:
 
 ### Tier 1: STRICT Mode (Default)
 | Criteria | Stock Threshold | Options Threshold | Description |
@@ -108,7 +122,7 @@ The scanner now uses a 3-tier adaptive filtering system that automatically relax
 | Delta | - | 0.12-0.48 | Wider range |
 | Days to Expiry | - | 5-23 | Slightly wider window |
 
-### Tier 3: RELAXED Mode (Final fallback)
+### Tier 3: RELAXED Mode (Auto-fallback 2)
 | Criteria | Stock Threshold | Options Threshold | Description |
 |----------|----------------|-------------------|-------------|
 | Beta | > 1.0 | - | Market beta or higher |
@@ -117,11 +131,33 @@ The scanner now uses a 3-tier adaptive filtering system that automatically relax
 | Delta | - | 0.10-0.50 | Full OTM range |
 | Days to Expiry | - | 5-25 | Maximum flexibility |
 
+### Tier 4: ULTRA Mode (Auto-fallback 3) [NEW in v2.2]
+| Criteria | Stock Threshold | Options Threshold | Description |
+|----------|----------------|-------------------|-------------|
+| Beta | > 0.8 | - | Accept lower volatility |
+| IV Rank | > 30% | > 30% | Low volatility threshold |
+| Daily Volume | > 100,000 | - | Minimal liquidity |
+| Delta | - | 0.05-0.95 | Full delta range |
+| Days to Expiry | - | 1-60 | Any expiration |
+| **Dynamic Penalty** | Applied | - | Scores reduced based on quality |
+
 ### ETF Fallback
 If no individual stocks qualify, the scanner includes high-volatility ETFs:
 - SPY, QQQ, IWM (Major indices)
 - XLF, SMH, XLE (Sector ETFs)
 - ARKK, GDX, TLT, VXX (Specialty ETFs)
+
+### Best Available Mode (Final Safety Net) [NEW in v2.2]
+If still insufficient results after all tiers:
+- Applies absolute quality floor checks
+- Scores all viable contracts regardless of thresholds
+- Returns top N contracts with clear warnings
+- Quality floor prevents complete garbage:
+  - Min beta: 0.5
+  - Min OI: 10
+  - Min volume: 10,000
+  - Max spread: 50%
+  - Min price: $0.50
 
 ## Risk Management
 
@@ -203,11 +239,13 @@ MAX_PROFIT_LIQ_WEIGHT = 0.20
 
 ## Interpreting Results
 
-### Color-Coded Symbols
+### Color-Coded Symbols (v2.2)
 The scanner color-codes stock symbols to indicate which filter tier found them:
 - 🟢 **Green**: STRICT mode (highest conviction)
 - 🟡 **Yellow**: MODERATE mode (good opportunities)
 - ⬜ **Gray**: RELAXED mode (broader criteria)
+- 🔴 **Red ⚠**: ULTRA mode (below normal thresholds)
+- 🔴 **Red ⚠⚠**: BEST AVAILABLE (absolute minimum quality)
 - 🔵 **Blue**: ETF (fallback opportunities)
 
 ### Score Interpretation
@@ -226,19 +264,27 @@ When enabled, the scanner shows contracts that failed 1-2 criteria:
 
 ## Troubleshooting
 
-### No Results Found (Resolved in v2.0)
-The adaptive system now prevents empty results by:
-1. Automatically relaxing criteria through 3 tiers
-2. Including ETF fallback options
-3. Tracking near-misses for review
+### No Results Found (Resolved in v2.2)
+The enhanced adaptive system guarantees results through:
+1. 4-tier filtering (STRICT → MODERATE → RELAXED → ULTRA)
+2. ETF fallback for high-volatility alternatives
+3. Best Available mode as final safety net
+4. Smart retry mechanism for API failures
+5. Force-results CLI option
 
-### Still Getting Empty Results?
-Only happens if:
-1. API rate limits preventing data fetch
-2. No options data available (pre/post market)
-3. System error (check logs)
-3. Options lack liquidity (spread too wide, low OI)
-4. All contracts outside delta range
+### Getting Low-Quality Results?
+If scanner returns ULTRA or BEST_AVAILABLE results:
+- Check market conditions (may be genuinely poor)
+- Consider waiting for better opportunities
+- Use `--quality-floor` to adjust minimum standards
+- Review individual contract warnings
+
+### API Rate Limits
+The scanner now handles rate limits gracefully:
+- Exponential backoff (1s, 2s, 4s delays)
+- Double delays for 429 errors
+- Automatic retry up to 3 times
+- Failed tickers tracked and reported
 
 ### Data Provider Issues
 - Ensure Alpaca API credentials are configured
@@ -341,5 +387,5 @@ For issues or questions:
 
 ---
 
-*Last Updated: August 2025*
-*Version: 1.0.0*
+*Last Updated: January 2025*
+*Version: 2.2.0*

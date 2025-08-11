@@ -1093,6 +1093,23 @@ Examples:
                        action='store_true',
                        help='Run Maximum Profit scanner for high-gamma, explosive opportunities')
     
+    # Ultra mode and force results arguments
+    parser.add_argument('--force-results',
+                       action='store_true',
+                       help='Force scanner to always return minimum results (enables ultra mode)')
+    
+    parser.add_argument('--min-results',
+                       type=int,
+                       default=5,
+                       metavar='N',
+                       help='Minimum number of results to return when using --force-results (default: 5)')
+    
+    parser.add_argument('--quality-floor',
+                       type=str,
+                       metavar='KEY:VALUE',
+                       action='append',
+                       help='Override quality floor settings (e.g., --quality-floor min_beta:0.3)')
+    
     return parser.parse_args()
 
 def main():
@@ -1131,6 +1148,24 @@ def main():
             data_provider=scanner.data_provider,
             risk_manager=scanner.risk_manager
         )
+        
+        # Apply force-results if specified
+        if args.force_results:
+            logger.info(f"Force-results mode enabled. Will return at least {args.min_results} results.")
+            config.MAX_PROFIT_FORCE_RESULTS = True
+            config.MAX_PROFIT_MIN_RESULTS = args.min_results
+        
+        # Apply quality floor overrides if specified
+        if args.quality_floor:
+            for floor_setting in args.quality_floor:
+                try:
+                    key, value = floor_setting.split(':')
+                    if key in config.MAX_PROFIT_ABSOLUTE_FLOOR:
+                        old_value = config.MAX_PROFIT_ABSOLUTE_FLOOR[key]
+                        config.MAX_PROFIT_ABSOLUTE_FLOOR[key] = float(value)
+                        logger.info(f"Quality floor override: {key} = {value} (was {old_value})")
+                except Exception as e:
+                    logger.warning(f"Invalid quality floor setting: {floor_setting} - {e}")
         
         # Run the adaptive scan (will try multiple threshold levels)
         opportunities = max_scanner.run_adaptive_scan()

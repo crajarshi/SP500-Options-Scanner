@@ -134,8 +134,8 @@ The **S\&P 500 Intraday Options Scanner** is a Python-based tool designed to:
 ### Overview
 High-risk, high-reward scanner for explosive short-term options (7-21 DTE, high gamma).
 
-### Adaptive Filtering System (v2.0)
-The scanner automatically tries multiple threshold levels:
+### Adaptive Filtering System (v2.2)
+The scanner automatically progresses through 4 tiers + fallbacks to guarantee results:
 
 1. **STRICT Mode** (Green symbols):
    - Beta > 1.2, IV Rank > 70%
@@ -152,9 +152,20 @@ The scanner automatically tries multiple threshold levels:
    - Delta: 0.10-0.50, DTE: 5-25
    - Broader search
 
-4. **ETF Fallback** (Blue symbols):
+4. **ULTRA Mode** (Red ⚠ symbols) [NEW]:
+   - Beta > 0.8, IV Rank > 30%
+   - Delta: 0.05-0.95, DTE: 1-60
+   - Below normal thresholds
+   - Dynamic penalty applied to scores
+
+5. **ETF Fallback** (Blue symbols):
    - Includes SPY, QQQ, IWM, etc.
    - When no stocks qualify
+
+6. **BEST AVAILABLE** (Red ⚠⚠ symbols) [NEW]:
+   - Final safety net
+   - Returns top N regardless of thresholds
+   - Clear quality warnings displayed
 
 ### Enhanced Scoring (45% GTR + 25% IVR + 15% LIQ + 10% Momentum + 5% Earnings)
 - **GTR**: Gamma/Theta ratio (explosive potential)
@@ -190,12 +201,20 @@ The scanner automatically tries multiple threshold levels:
 
 ### Maximum Profit Scanner
 1. Launch with `--max-profit` flag.
-2. Scanner automatically tries STRICT → MODERATE → RELAXED → ETFs.
-3. Review color-coded results (Green = highest conviction).
-4. Check score breakdown and G/T ratio.
-5. Verify liquidity metrics (spread, OI, volume).
-6. Use 50% position sizing for selected trades.
-7. Monitor closely due to theta decay.
+2. Optional: Use `--force-results --min-results N` to guarantee N results.
+3. Optional: Override quality with `--quality-floor min_beta:0.5`.
+4. Scanner automatically tries STRICT → MODERATE → RELAXED → ULTRA → ETFs → BEST AVAILABLE.
+5. Review color-coded results:
+   - Green = highest conviction (STRICT)
+   - Yellow = good quality (MODERATE)
+   - Gray = acceptable (RELAXED)
+   - Red ⚠ = below thresholds (ULTRA)
+   - Red ⚠⚠ = minimum quality (BEST AVAILABLE)
+   - Blue = ETF fallback
+6. Check score breakdown, G/T ratio, and any warnings.
+7. Verify liquidity metrics (spread, OI, volume).
+8. Use 50% position sizing (or less for ULTRA/BEST AVAILABLE).
+9. Monitor closely due to theta decay.
 
 ---
 

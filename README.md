@@ -31,33 +31,34 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 - **Quick Scan Mode**: Use cached data for rapid re-analysis
 - **Comprehensive Error Handling**: Continues processing despite individual stock errors
 
-### 🚀 NEW: Maximum Profit Scanner (v2.0 - Adaptive Mode)
-- **Adaptive High-Gamma Scanner**: Automatically adjusts thresholds to find opportunities in any market
-- **3-Tier Filtering System**: 
-  - STRICT: Beta>1.2, IVR>70% (high conviction trades)
-  - MODERATE: Beta>1.1, IVR>60% (balanced opportunities)
-  - RELAXED: Beta>1.0, IVR>50% (broader search)
-- **Enhanced Scoring Algorithm**: GTR (45%) + IVR (25%) + Liquidity (15%) + Momentum (10%) + Earnings (5%)
-- **ETF Fallback**: Includes high-volatility ETFs (SPY, QQQ, IWM, etc.) when individual stocks don't qualify
-- **Near-Miss Tracking**: Shows contracts that barely missed criteria for manual review
-- **Smart Position Sizing**: Adaptive sizing based on filter mode and confidence
-- **Never Empty Results**: Guaranteed opportunities through progressive filtering
+### 🚀 NEW: Maximum Profit Scanner (v2.2 - Ultra Mode)
+- **4-Tier Adaptive Scanner**: STRICT → MODERATE → RELAXED → ULTRA filtering
+- **Guaranteed Results**: Never returns empty through best-available logic
+- **Smart Retry Mechanism**: Exponential backoff with rate limit handling
+- **Ultra Mode**: Beta>0.8, IVR>30% with dynamic penalty scoring
+- **Best Available**: Final safety net with absolute quality floor
+- **Force Results CLI**: `--force-results --min-results N` options
+- **Quality Warnings**: Clear indicators when results fall below thresholds
+- **Configurable Floor**: Override minimum quality with `--quality-floor`
 - **See [MAX_PROFIT_SCANNER.md](MAX_PROFIT_SCANNER.md) for detailed documentation**
 
-## 📅 Recent Updates (v2.1.0)
+## 📅 Recent Updates (v2.2.0 - January 2025)
 
-### Bug Fixes
-- **Fixed**: `clean_symbol` undefined error in market regime SPY data fetching
-- **Fixed**: Insufficient data for indicator calculations (increased LOOKBACK_DAYS from 3 to 7)
-- **Fixed**: Test connection now fetches 3 days instead of 1 for proper validation
-- **Enhanced**: Better error messages showing exact bar counts when data is insufficient
+### New Ultra Mode Features
+- **Ultra-Relaxed Mode**: 4th tier with Beta>0.8, IVR>30% for guaranteed results
+- **Best Available Logic**: Always returns minimum results even below all thresholds
+- **Smart Retry Mechanism**: Exponential backoff for API calls with rate limit handling
+- **Dynamic Penalty System**: Reduces scores in ultra mode based on quality gaps
+- **Force Results CLI**: New `--force-results` and `--min-results` options
+- **Quality Floor Override**: `--quality-floor` to customize minimum standards
+- **Enhanced Warnings**: Clear visual indicators for sub-threshold results
 
-### New Features  
-- **Adaptive Max-Profit Mode**: Automatically relaxes filters through 3 tiers if no opportunities found
-- **Momentum Scoring**: Added technical momentum indicators (RSI, trend, volume) to scoring
-- **Near-Miss Tracking**: Tracks and reports contracts that barely missed criteria
-- **ETF Support**: Falls back to high-volatility ETFs when individual stocks don't qualify
-- **Color-Coded Results**: Visual indicators for filter mode (Green=Strict, Yellow=Moderate, Gray=Relaxed, Blue=ETF)
+### Previous v2.1.0 Features
+- **Adaptive Max-Profit Mode**: Automatically relaxes filters through multiple tiers
+- **Momentum Scoring**: Added technical momentum indicators to scoring
+- **Near-Miss Tracking**: Tracks contracts that barely missed criteria
+- **ETF Support**: Falls back to high-volatility ETFs when stocks don't qualify
+- **Color-Coded Results**: Visual indicators (Green=Strict, Yellow=Moderate, Red⚠=Ultra)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
@@ -172,6 +173,10 @@ python sp500_options_scanner.py --finnhub
 
 # 🚀 NEW: Run Maximum Profit Scanner (high-gamma opportunities)
 python sp500_options_scanner.py --max-profit
+
+# Ultra Mode: Force results with custom settings
+python sp500_options_scanner.py --max-profit --force-results --min-results 10
+python sp500_options_scanner.py --max-profit --quality-floor min_beta:0.3 --quality-floor min_oi:5
 
 # Combine options
 python sp500_options_scanner.py --demo --continuous

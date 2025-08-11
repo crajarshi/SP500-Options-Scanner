@@ -175,6 +175,16 @@ class MaxProfitScanner:
             self.delta_final_max = config.MAX_PROFIT_RELAXED_DELTA_MAX
             self.min_expiry_days = config.MAX_PROFIT_RELAXED_DTE_MIN
             self.max_expiry_days = config.MAX_PROFIT_RELAXED_DTE_MAX
+        elif mode == 'ultra':
+            logger.info("⚠️ Switching to ULTRA-RELAXED mode - showing best available")
+            self.beta_threshold = config.MAX_PROFIT_ULTRA_BETA
+            self.iv_rank_threshold = config.MAX_PROFIT_ULTRA_IV_RANK
+            self.min_stock_volume = config.MAX_PROFIT_ULTRA_VOLUME
+            self.min_stock_price = config.MAX_PROFIT_ULTRA_PRICE
+            self.delta_final_min = config.MAX_PROFIT_ULTRA_DELTA_MIN
+            self.delta_final_max = config.MAX_PROFIT_ULTRA_DELTA_MAX
+            self.min_expiry_days = config.MAX_PROFIT_ULTRA_DTE_MIN
+            self.max_expiry_days = config.MAX_PROFIT_ULTRA_DTE_MAX
         else:  # strict mode
             logger.info("Using STRICT mode thresholds")
             self.beta_threshold = config.MAX_PROFIT_BETA_THRESHOLD
@@ -186,6 +196,9 @@ class MaxProfitScanner:
             self.max_expiry_days = config.MAX_PROFIT_MAX_EXPIRY_DAYS
         
         self.current_mode = mode
+        
+        # Load absolute floor settings
+        self.absolute_floor = config.MAX_PROFIT_ABSOLUTE_FLOOR
     
     def calculate_final_score(self, contract: MaxProfitContract, 
                              gtr_min: float, gtr_max: float, 
@@ -357,8 +370,12 @@ class MaxProfitScanner:
             if ticker in self.stock_cache:
                 return self.stock_cache[ticker]['eligible']
             
-            # Get latest quote for price and volume check
-            quote = self.data_provider.fetch_latest_quote(ticker)
+            # Get latest quote for price and volume check with retry
+            quote = self.fetch_with_retry(
+                self.data_provider.fetch_latest_quote,
+                ticker,
+                max_retries=2  # Fewer retries for quotes
+            )
             if not quote:
                 self._log_skip(ticker, "no_quote")
                 # Cache as ineligible to avoid re-checking
@@ -459,7 +476,7 @@ class MaxProfitScanner:
     
     def _fetch_and_filter_options(self, ticker: str) -> List[MaxProfitContract]:
         """
-        Fetch options for a ticker and apply initial filters
+        Fetch options for a ticker and apply initial filters with retry mechanism
         """
         contracts = []
         
@@ -468,8 +485,12 @@ class MaxProfitScanner:
             stock_info = self.stock_cache.get(ticker, {})
             current_price = stock_info.get('price', 100)
             
-            # Fetch chain
-            chain_data = self.data_provider.fetch_options_chain(ticker)
+            # Fetch chain with smart retry
+            chain_data = self.fetch_with_retry(
+                self.data_provider.fetch_options_chain, 
+                ticker,
+                max_retries=3
+            )
             if not chain_data:
                 return contracts
             
@@ -684,8 +705,9 @@ class MaxProfitScanner:
         logger.info("Will automatically adjust thresholds if needed...")
         logger.info("=" * 60)
         
-        modes = ['strict', 'moderate', 'relaxed']
+        modes = ['strict', 'moderate', 'relaxed', 'ultra']
         all_results = []
+        all_contracts_seen = []  # Track all contracts for best_available
         
         for mode in modes:
             self.update_thresholds(mode)
@@ -693,31 +715,53 @@ class MaxProfitScanner:
             
             results = self.run_scan()
             
+            # Store all contracts we've seen
+            if hasattr(self, 'last_scan_contracts'):
+                all_contracts_seen.extend(self.last_scan_contracts)
+            
             if results:
                 logger.info(f"✅ Found {len(results)} opportunities in {mode} mode")
-                # Add mode tag to results
+                # Add mode tag and quality tier to results
                 for r in results:
                     r['filter_mode'] = mode.upper()
+                    r['quality_tier'] = self._get_quality_tier(mode)
                 all_results.extend(results)
                 
                 # If we found enough in strict/moderate, stop
-                if mode != 'relaxed' and len(all_results) >= 3:
+                if mode in ['strict', 'moderate'] and len(all_results) >= 5:
                     break
             else:
-                logger.info(f"No results in {mode} mode, trying next level...")
+                logger.info(f"No results in {mode} mode")
+                if mode == 'ultra':
+                    logger.info("⚠️ Even ultra mode found nothing - fetching best available...")
         
-        # Include ETFs if still no results
-        if not all_results and config.MAX_PROFIT_ETFS:
+        # Include ETFs if still not enough results
+        if len(all_results) < config.MAX_PROFIT_MIN_RESULTS and config.MAX_PROFIT_ETFS:
             logger.info("\n🔍 Adding high-volatility ETFs to search...")
             etf_results = self._scan_etfs()
             if etf_results:
                 for r in etf_results:
                     r['filter_mode'] = 'ETF'
+                    r['quality_tier'] = 'ETF'
                 all_results.extend(etf_results)
         
+        # If still no results, use best available from everything we've seen
+        if len(all_results) < config.MAX_PROFIT_MIN_RESULTS:
+            logger.warning(f"Only found {len(all_results)} results - adding best available...")
+            best_available = self.get_best_available(
+                all_contracts_seen, 
+                min_results=config.MAX_PROFIT_MIN_RESULTS - len(all_results)
+            )
+            all_results.extend(best_available)
+        
         # Sort by score and limit
-        all_results.sort(key=lambda x: x['score'], reverse=True)
-        top_results = all_results[:self.top_results]
+        all_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+        top_results = all_results[:max(self.top_results, config.MAX_PROFIT_MIN_RESULTS)]
+        
+        # Add warnings for low-quality results
+        for result in top_results:
+            if result.get('quality_tier') in ['BELOW', 'ULTRA']:
+                result['warnings'] = self._get_quality_warnings(result)
         
         # Add near misses if enabled
         if self.show_near_misses and self.near_misses:
@@ -735,7 +779,8 @@ class MaxProfitScanner:
         results = []
         for etf in config.MAX_PROFIT_ETFS:
             try:
-                contracts = self.fetch_option_contracts(etf)
+                # Use the same method as regular scan
+                contracts = self._fetch_and_filter_options(etf)
                 if contracts:
                     # Process similar to regular scan
                     for contract in contracts:
@@ -804,6 +849,9 @@ class MaxProfitScanner:
         all_contracts = []
         for ticker_contracts in all_contracts_by_ticker.values():
             all_contracts.extend(ticker_contracts)
+        
+        # Store all contracts for best_available fallback
+        self.last_scan_contracts = all_contracts.copy()
         
         logger.info(f"Collected {len(all_contracts)} contracts for scoring")
         
@@ -955,3 +1003,169 @@ class MaxProfitScanner:
             
         except Exception as e:
             logger.error(f"Error saving results: {e}")
+    
+    def get_best_available(self, all_contracts: List[MaxProfitContract], min_results: int = 5) -> List[Dict]:
+        """
+        Get best available contracts regardless of thresholds, with quality floor checks
+        
+        Args:
+            all_contracts: All contracts seen during scan
+            min_results: Minimum number of results to return
+        
+        Returns:
+            List of formatted results with quality warnings
+        """
+        logger.info(f"Finding best {min_results} contracts from {len(all_contracts)} total...")
+        
+        results = []
+        floor = config.MAX_PROFIT_ABSOLUTE_FLOOR
+        
+        # Apply absolute quality floor
+        viable_contracts = []
+        for contract in all_contracts:
+            # Check absolute minimums
+            if contract.open_interest < floor['min_oi']:
+                continue
+            if contract.spread_percent > floor['max_spread_pct']:
+                continue
+            if contract.mid_price < floor['min_price']:
+                continue
+            
+            # Check if stock has minimum volume (from cache)
+            stock_info = self.stock_cache.get(contract.symbol, {})
+            if stock_info.get('volume', 0) < floor['min_volume']:
+                continue
+            
+            # Check beta if available
+            if stock_info.get('beta', 1.0) < floor['min_beta']:
+                continue
+            
+            viable_contracts.append(contract)
+        
+        logger.info(f"Found {len(viable_contracts)} contracts meeting absolute floor")
+        
+        # Score all viable contracts
+        for contract in viable_contracts:
+            if not hasattr(contract, 'final_score') or contract.final_score == 0:
+                # Quick scoring
+                gtr = contract.gamma / max(abs(contract.theta), config.MAX_PROFIT_EPSILON)
+                gtr_norm = min(1.0, gtr / 10.0)  # Simple normalization
+                ivr = contract.iv_rank / 100.0
+                
+                # Liquidity score
+                oi_score = np.log(1 + contract.open_interest) / np.log(1 + 1000)
+                vol_score = np.log(1 + contract.volume) / np.log(1 + 50)
+                spread_score = max(0, 1 - contract.spread_percent / 0.15)
+                liq = (oi_score * 0.4 + vol_score * 0.3 + spread_score * 0.3)
+                
+                # Apply dynamic penalty for ultra mode
+                penalty_mult = 1.0
+                if self.current_mode == 'ultra':
+                    # Penalize based on how far below thresholds
+                    stock_info = self.stock_cache.get(contract.symbol, {})
+                    beta_penalty = max(0, 1.2 - stock_info.get('beta', 1.0)) * 0.2
+                    ivr_penalty = max(0, 0.7 - ivr) * 0.3
+                    penalty_mult = max(0.5, 1.0 - beta_penalty - ivr_penalty)
+                
+                contract.final_score = (gtr_norm * 0.5 + ivr * 0.3 + liq * 0.2) * penalty_mult
+        
+        # Sort by score
+        viable_contracts.sort(key=lambda x: x.final_score, reverse=True)
+        
+        # Take top N
+        for contract in viable_contracts[:min_results]:
+            result = self._contract_to_dict(contract)
+            result['filter_mode'] = 'BEST_AVAILABLE'
+            result['quality_tier'] = 'BELOW'
+            
+            # Format beta value properly
+            beta_value = self.stock_cache.get(contract.symbol, {}).get('beta')
+            beta_str = f"{beta_value:.2f}" if beta_value else "N/A"
+            
+            result['warnings'] = [
+                f"⚠️ Below normal thresholds",
+                f"Beta: {beta_str}",
+                f"IVR: {contract.iv_rank:.0f}%",
+                f"Use extreme caution"
+            ]
+            results.append(result)
+        
+        if len(results) < min_results:
+            logger.warning(f"Could only find {len(results)} contracts meeting absolute floor")
+        
+        return results
+    
+    def _get_quality_tier(self, mode: str) -> str:
+        """Get quality tier label for display"""
+        tiers = {
+            'strict': 'HIGH',
+            'moderate': 'MEDIUM', 
+            'relaxed': 'LOW',
+            'ultra': 'BELOW',
+            'best_available': 'FLOOR'
+        }
+        return tiers.get(mode, 'UNKNOWN')
+    
+    def _get_quality_warnings(self, result: Dict) -> List[str]:
+        """Generate quality warnings for sub-threshold results"""
+        warnings = []
+        tier = result.get('quality_tier', '')
+        
+        if tier == 'BELOW':
+            warnings.append("⚠️ This contract is below normal quality thresholds")
+            warnings.append("Very high risk - use extreme caution")
+        elif tier == 'LOW':
+            warnings.append("⚠️ Relaxed criteria used - higher risk")
+        elif tier == 'FLOOR':
+            warnings.append("⚠️ Absolute minimum quality - last resort option")
+            warnings.append("Only consider if no alternatives exist")
+        
+        # Add specific metric warnings
+        if 'score' in result and result['score'] < 40:
+            warnings.append(f"Low score: {result['score']:.1f}/100")
+        
+        return warnings
+    
+    def fetch_with_retry(self, fetch_func, *args, max_retries: int = 3, **kwargs):
+        """
+        Smart retry mechanism with exponential backoff for API calls
+        
+        Args:
+            fetch_func: Function to call
+            max_retries: Maximum number of retry attempts
+            *args, **kwargs: Arguments to pass to fetch_func
+        
+        Returns:
+            Result from fetch_func or None if all retries failed
+        """
+        retry_delays = [1, 2, 4]  # Exponential backoff
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                result = fetch_func(*args, **kwargs)
+                if result is not None:
+                    return result
+            except Exception as e:
+                last_error = e
+                if "429" in str(e) or "rate" in str(e).lower():
+                    # Rate limit error - wait longer
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt] * 2  # Double delay for rate limits
+                        logger.warning(f"Rate limit hit, waiting {delay}s before retry {attempt + 1}/{max_retries}")
+                        time.sleep(delay)
+                        continue
+                elif "404" in str(e):
+                    # Not found - don't retry
+                    logger.debug(f"Resource not found: {e}")
+                    return None
+                else:
+                    # Other error - normal retry
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        logger.debug(f"Error on attempt {attempt + 1}, retrying in {delay}s: {e}")
+                        time.sleep(delay)
+                        continue
+        
+        logger.error(f"All {max_retries} attempts failed. Last error: {last_error}")
+        return None

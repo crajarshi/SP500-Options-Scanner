@@ -183,10 +183,31 @@ MAX_PROFIT_RELAXED_DTE_MAX = 25
 # High-Volatility ETFs to Include
 MAX_PROFIT_ETFS = ['SPY', 'QQQ', 'IWM', 'XLF', 'SMH', 'ARKK', 'XLE', 'GDX', 'TLT', 'VXX']
 
+# ULTRA-RELAXED MODE Thresholds (Final fallback - guarantees results)
+MAX_PROFIT_ULTRA_BETA = 0.8                       # Accept almost any beta
+MAX_PROFIT_ULTRA_IV_RANK = 30                     # Very low IV threshold  
+MAX_PROFIT_ULTRA_VOLUME = 100000                  # Minimal volume requirement
+MAX_PROFIT_ULTRA_PRICE = 1.0                      # Accept any non-penny stock
+MAX_PROFIT_ULTRA_DELTA_MIN = 0.05                 # Full delta range
+MAX_PROFIT_ULTRA_DELTA_MAX = 0.95
+MAX_PROFIT_ULTRA_DTE_MIN = 1                      # Any expiration
+MAX_PROFIT_ULTRA_DTE_MAX = 60
+
+# Absolute Quality Floor (never show below these)
+MAX_PROFIT_ABSOLUTE_FLOOR = {
+    'min_beta': 0.5,                              # Never show below 0.5 beta
+    'min_oi': 10,                                 # Absolute minimum open interest
+    'min_volume': 10000,                          # Absolute minimum daily volume
+    'max_spread_pct': 0.5,                        # Never show >50% bid-ask spread
+    'min_price': 0.50                             # No ultra-penny stocks
+}
+
 # Adaptive Mode Settings
 MAX_PROFIT_AUTO_ADAPT = True                      # Automatically relax filters if no results
 MAX_PROFIT_SHOW_NEAR_MISSES = True               # Show contracts that almost qualified
 MAX_PROFIT_NEAR_MISS_COUNT = 5                   # Number of near misses to display
+MAX_PROFIT_FORCE_RESULTS = False                  # Force showing results even if poor quality
+MAX_PROFIT_MIN_RESULTS = 5                        # Minimum results to always show
 
 # Options Selection - Two-stage filtering
 MAX_PROFIT_DELTA_SCAN_MIN = 0.10                  # Wide initial scan range

@@ -5,6 +5,29 @@ All notable changes to the S&P 500 Intraday Options Scanner will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-01-11 (Ultra Mode Update)
+
+### Added
+- **Ultra-Relaxed Mode**: 4th tier (STRICT → MODERATE → RELAXED → ULTRA) that guarantees results
+- **Best Available Logic**: Always returns minimum results even if no contracts meet thresholds
+- **Smart Retry Mechanism**: Exponential backoff with special handling for rate limits (429 errors)
+- **Absolute Quality Floor**: Configurable minimum standards below which contracts are never shown
+- **Dynamic Penalty System**: Reduces scores in ultra mode based on how far metrics fall below thresholds
+- **Quality Warnings**: Clear warnings when results are below normal quality thresholds
+- **Force Results Mode**: Configuration to always show minimum number of results
+
+### Enhanced
+- **Retry Logic**: All API calls now use `fetch_with_retry()` with exponential backoff
+- **Contract Tracking**: `last_scan_contracts` stores all seen contracts for best_available fallback
+- **ETF Scanning**: Fixed method calls and properly integrated with adaptive system
+- **Error Recovery**: Better handling of rate limits and transient API failures
+
+### Configuration Changes
+- Added `MAX_PROFIT_ULTRA_*` thresholds for ultra-relaxed mode
+- Added `MAX_PROFIT_ABSOLUTE_FLOOR` dictionary with minimum quality standards
+- Added `MAX_PROFIT_FORCE_RESULTS` flag (default: False)
+- Added `MAX_PROFIT_MIN_RESULTS` setting (default: 5)
+
 ## [2.1.0] - 2025-01-11
 
 ### Added

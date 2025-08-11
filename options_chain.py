@@ -296,9 +296,19 @@ class OptionsChainAnalyzer:
             if mid_price < config.OPTIONS_MIN_PREMIUM:
                 return False, f"premium too low: ${mid_price:.2f}"
             
-            # Check maximum premium ratio for OTM options
+            # CRITICAL: Absolute premium sanity check - no option should cost more than the stock
             if stock_price and stock_price > 0:
                 premium_ratio = mid_price / stock_price
+                
+                # Absolute check - applies to ALL options
+                if premium_ratio > config.OPTIONS_MAX_ABSOLUTE_PREMIUM_RATIO:
+                    return False, f"ABSURD PREMIUM: ${mid_price:.2f} exceeds stock price ${stock_price:.2f} (ratio: {premium_ratio:.1%})"
+                
+                # Additional check for bid price alone
+                if bid > stock_price:
+                    return False, f"ABSURD BID: ${bid:.2f} exceeds stock price ${stock_price:.2f}"
+                
+                # Existing check for OTM options with lower threshold
                 if premium_ratio > config.OPTIONS_MAX_PREMIUM_RATIO:
                     # Check if it's actually OTM before rejecting
                     delta = abs(contract_data.get('delta', 0.5))
@@ -566,6 +576,24 @@ class OptionsChainAnalyzer:
         """
         if not contracts:
             return None
+        
+        # FINAL SANITY CHECK: Filter out any contracts with absurd premiums
+        reasonable_contracts = []
+        for contract in contracts:
+            # Ensure the premium is not higher than the stock price
+            if contract.mid_price < stock_price:
+                reasonable_contracts.append(contract)
+            else:
+                logger.warning(f"REJECTED {contract.symbol} {contract.strike} {contract.contract_type}: "
+                             f"Premium ${contract.mid_price:.2f} exceeds stock price ${stock_price:.2f}")
+                self.filtered_contracts_count += 1
+                self.filtered_symbols.add(contract.symbol)
+        
+        if not reasonable_contracts:
+            logger.warning(f"All contracts failed sanity check for stock price ${stock_price:.2f}")
+            return None
+        
+        contracts = reasonable_contracts
         
         # For neutral signals (ATM), find the single best ATM option
         if abs(target_delta) == 0.50:

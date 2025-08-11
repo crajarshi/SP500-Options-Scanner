@@ -130,6 +130,7 @@ OPTIONS_MAX_SPREAD_PERCENT = 0.10  # Maximum 10% bid-ask spread
 OPTIONS_STANDARD_ONLY = True  # Filter out non-standard/adjusted contracts
 OPTIONS_MAX_STRIKE_DEVIATION = 0.5  # Max 50% deviation from stock price
 OPTIONS_MAX_PREMIUM_RATIO = 0.3  # Max premium 30% of stock price for OTM
+OPTIONS_MAX_ABSOLUTE_PREMIUM_RATIO = 1.0  # Max premium 100% of stock price (applies to ALL options)
 OPTIONS_MIN_PREMIUM = 0.01  # Minimum premium to consider valid
 OPTIONS_CONTRACT_SIZE = 100  # Standard contract size (shares per contract)
 

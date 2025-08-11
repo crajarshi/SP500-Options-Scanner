@@ -5,7 +5,6 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Alpaca](https://img.shields.io/badge/API-Alpaca-green.svg)
-![Finnhub](https://img.shields.io/badge/API-Finnhub-orange.svg)
 
 ## Features
 

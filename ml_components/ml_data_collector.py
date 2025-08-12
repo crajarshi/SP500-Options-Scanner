@@ -3,17 +3,22 @@ Machine Learning Data Collector
 Collects and prepares historical data for deep learning model training
 """
 import os
+import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pickle
 import logging
+import time
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
-import yfinance as yf
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import warnings
 warnings.filterwarnings('ignore')
+
+# Add parent directory to path to import AlpacaDataProvider
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from alpaca_data_provider import AlpacaDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,9 @@ class MLDataCollector:
         self.label_days = label_days
         self.cache_dir = cache_dir
         
+        # Initialize Alpaca data provider
+        self.data_provider = AlpacaDataProvider()
+        
         # Create cache directory if it doesn't exist
         os.makedirs(self.cache_dir, exist_ok=True)
         
@@ -56,7 +64,7 @@ class MLDataCollector:
         
     def collect_stock_data(self, ticker: str) -> Optional[pd.DataFrame]:
         """
-        Collect historical data for a single stock
+        Collect historical data for a single stock using Alpaca API
         
         Args:
             ticker: Stock ticker symbol
@@ -71,19 +79,83 @@ class MLDataCollector:
             try:
                 with open(cache_file, 'rb') as f:
                     df = pickle.load(f)
-                    logger.info(f"Loaded {ticker} from cache")
-                    return df
+                    # Check if cache has enough recent data
+                    if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                        last_date = df.index.max()
+                        if last_date >= pd.to_datetime(self.end_date) - timedelta(days=7):
+                            logger.info(f"Loaded {ticker} from cache")
+                            return df
             except:
                 pass
         
         try:
-            # Download data using yfinance
-            stock = yf.Ticker(ticker)
-            df = stock.history(start=self.start_date, end=self.end_date)
+            # Calculate total days needed
+            start_dt = pd.to_datetime(self.start_date)
+            end_dt = pd.to_datetime(self.end_date)
+            total_days = (end_dt - start_dt).days
             
-            if df.empty:
+            # Fetch data in chunks (Alpaca has limits on historical data)
+            all_data = []
+            chunk_size = 365  # Fetch 1 year at a time
+            max_days_per_request = 1000  # Alpaca's limit
+            
+            current_end = end_dt
+            while current_end > start_dt:
+                current_start = max(current_end - timedelta(days=min(chunk_size, max_days_per_request)), start_dt)
+                
+                # Calculate days to fetch for this chunk
+                days_to_fetch = min((current_end - current_start).days + 1, max_days_per_request)
+                
+                logger.info(f"Fetching {ticker} data from {current_start.date()} to {current_end.date()}")
+                
+                # Fetch daily bars from Alpaca
+                df_chunk = self.data_provider.fetch_daily_bars(
+                    ticker, 
+                    days_back=days_to_fetch
+                )
+                
+                if df_chunk is not None and not df_chunk.empty:
+                    # Filter to our date range
+                    df_chunk['timestamp'] = pd.to_datetime(df_chunk['timestamp'])
+                    
+                    # Make timestamps timezone-naive for comparison
+                    if df_chunk['timestamp'].dt.tz is not None:
+                        df_chunk['timestamp'] = df_chunk['timestamp'].dt.tz_localize(None)
+                    
+                    df_chunk = df_chunk[
+                        (df_chunk['timestamp'] >= current_start) & 
+                        (df_chunk['timestamp'] <= current_end)
+                    ]
+                    
+                    if not df_chunk.empty:
+                        all_data.append(df_chunk)
+                    
+                # Move to next chunk
+                current_end = current_start - timedelta(days=1)
+                
+                # Add delay to respect rate limits
+                time.sleep(0.5)
+            
+            if not all_data:
                 logger.warning(f"No data found for {ticker}")
                 return None
+            
+            # Combine all chunks
+            df = pd.concat(all_data, ignore_index=True)
+            df = df.sort_values('timestamp')
+            df = df.drop_duplicates(subset=['timestamp'])
+            
+            # Rename columns to match expected format
+            df = df.rename(columns={
+                'open': 'Open',
+                'high': 'High',
+                'low': 'Low',
+                'close': 'Close',
+                'volume': 'Volume'
+            })
+            
+            # Set timestamp as index
+            df.set_index('timestamp', inplace=True)
             
             # Add ticker column
             df['ticker'] = ticker
@@ -92,6 +164,7 @@ class MLDataCollector:
             with open(cache_file, 'wb') as f:
                 pickle.dump(df, f)
             
+            logger.info(f"Collected {len(df)} days of data for {ticker}")
             return df
             
         except Exception as e:
@@ -217,7 +290,7 @@ class MLDataCollector:
         feature_cols = [col for col in self.feature_columns if col in df.columns]
         
         # Fill NaN values
-        df[feature_cols] = df[feature_cols].fillna(method='ffill').fillna(0)
+        df[feature_cols] = df[feature_cols].ffill().fillna(0)
         
         X, y = [], []
         

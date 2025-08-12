@@ -2,13 +2,48 @@
 
 ## 🚀 Quick Start
 
+### Prerequisites
+- Python 3.11 (required for TensorFlow compatibility)
+- 8GB+ RAM (16GB recommended for training)
+- 50GB+ free disk space for data and models
+- For Apple Silicon Macs: macOS 12.0+ for Metal Performance Shaders support
+
 ### Installation
+
+#### For Apple Silicon Macs (M1/M2/M3/M4)
 ```bash
-# Install ML dependencies
+# Create Python 3.11 virtual environment
+python3.11 -m venv venv311
+source venv311/bin/activate
+
+# Install Apple Silicon optimized TensorFlow
+pip install tensorflow-macos tensorflow-metal
+
+# Install other ML dependencies
+pip install scikit-learn xgboost shap mlflow optuna imbalanced-learn pandas python-dotenv
+
+# Create necessary directories
+mkdir -p models ml_data_cache ml_logs
+
+# Test your setup
+python test_ml_setup.py
+# You should see: "✅ Metal Performance Shaders (MPS) available"
+```
+
+#### For Intel Macs and Other Platforms
+```bash
+# Create virtual environment
+python3.11 -m venv venv311
+source venv311/bin/activate
+
+# Install standard dependencies
 pip install -r requirements.txt
 
 # Create necessary directories
 mkdir -p models ml_data_cache ml_logs
+
+# Test your setup
+python test_ml_setup.py
 ```
 
 ### First-Time Setup
@@ -35,11 +70,18 @@ The deep learning system enhances your trading scanner with:
 ## 🧠 ML Components
 
 ### 1. Data Collection (`ml_data_collector.py`)
-Collects and prepares historical data for training:
+Collects and prepares historical data for training using **Alpaca API** (not yfinance):
+
+**Important**: The data collector now uses Alpaca API for reliability and consistency:
+- No more yfinance timeouts or parsing errors
+- Same data source as the main scanner
+- Fetches data in chunks to handle 8+ years of history
+- Automatic rate limit handling
+
 ```python
 from ml_components.ml_data_collector import MLDataCollector
 
-# Initialize collector
+# Initialize collector (uses Alpaca API automatically)
 collector = MLDataCollector(
     tickers=['AAPL', 'MSFT', 'GOOGL'],  # Add your tickers
     start_date='2015-01-01',
@@ -47,7 +89,7 @@ collector = MLDataCollector(
     label_days=10  # 10-day holding period
 )
 
-# Collect data
+# Collect data (fetches from Alpaca in yearly chunks)
 df = collector.collect_all_data()
 ```
 

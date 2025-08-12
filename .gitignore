@@ -19,6 +19,7 @@ __pycache__/
 .Python
 env/
 venv/
+venv311/
 ENV/
 .venv
 
@@ -42,3 +43,13 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# ML model files
+models/
+*.pkl
+*.h5
+*.joblib
+
+# MLflow artifacts
+mlruns/
+mlartifacts/

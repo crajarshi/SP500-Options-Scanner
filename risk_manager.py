@@ -160,12 +160,13 @@ class RiskManager:
         
         return True, f"Risk approved: ${total_risk:.2f} / ${self.max_dollar_risk:.2f}", contracts
     
-    def calculate_position_size(self, contract_price: float) -> int:
+    def calculate_position_size(self, contract_price: float, ml_confidence: float = None) -> int:
         """
-        Calculate optimal position size based on risk parameters
+        Calculate optimal position size based on risk parameters and ML confidence
         
         Args:
             contract_price: Price per contract (premium * 100)
+            ml_confidence: ML model confidence score (0-1), scales position size
             
         Returns:
             Number of contracts to trade
@@ -173,8 +174,31 @@ class RiskManager:
         if contract_price <= 0:
             return 0
         
-        # Calculate based on max risk per trade
-        max_contracts = int(self.max_dollar_risk / contract_price)
+        # Base risk amount
+        base_risk = self.max_dollar_risk
+        
+        # Apply ML confidence scaling if provided
+        if ml_confidence is not None:
+            # Scale position size based on confidence
+            # 90%+ confidence = full position
+            # 75% confidence = 75% position
+            # 60% confidence = 50% position
+            if ml_confidence >= 0.9:
+                risk_multiplier = 1.0
+            elif ml_confidence >= 0.75:
+                risk_multiplier = 0.75
+            elif ml_confidence >= 0.60:
+                risk_multiplier = 0.5
+            else:
+                risk_multiplier = 0.25  # Minimum position for low confidence
+            
+            adjusted_risk = base_risk * risk_multiplier
+            logger.debug(f"ML confidence {ml_confidence:.2%} -> risk multiplier {risk_multiplier:.2%}")
+        else:
+            adjusted_risk = base_risk
+        
+        # Calculate based on adjusted risk
+        max_contracts = int(adjusted_risk / contract_price)
         
         # Also check against remaining daily capacity
         remaining_capacity = self.daily_loss_limit + self.daily_pnl

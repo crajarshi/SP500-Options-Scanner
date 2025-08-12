@@ -1,6 +1,6 @@
-# S&P 500 Intraday Options Scanner 📈
+# S&P 500 Intraday Options Scanner with Deep Learning 📈🧠
 
-An advanced Python application that analyzes S&P 500 stocks using intraday technical indicators to identify the top options trading opportunities. The scanner uses 15-minute bars to provide real-time, actionable signals throughout the trading day.
+An advanced Python application that analyzes S&P 500 stocks using intraday technical indicators and deep learning models to identify the top options trading opportunities. The scanner uses 15-minute bars and neural network predictions to provide real-time, actionable signals throughout the trading day.
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -8,6 +8,17 @@ An advanced Python application that analyzes S&P 500 stocks using intraday techn
 ![Finnhub](https://img.shields.io/badge/API-Finnhub-orange.svg)
 
 ## Features
+
+### 🆕 Deep Learning Integration (v3.0)
+- **Neural Network Predictions**: Hybrid deep learning model trained on 8+ years of historical data
+- **SHAP Explainability**: Human-readable explanations for every ML prediction
+- **Confidence-Based Position Sizing**: Automatic risk adjustment based on ML confidence (90%+ = full position, 60-75% = reduced position)
+- **Feature Drift Monitoring**: Detects when market conditions change significantly
+- **Walk-Forward Validation**: Ensures no look-ahead bias in model training
+- **Realistic Backtesting**: Includes transaction costs, slippage, and daily limits
+- **50+ Technical Features**: Comprehensive feature engineering pipeline
+- **Ensemble Models**: Option to combine multiple models for improved accuracy
+- **See [ML_TRADING_GUIDE.md](ML_TRADING_GUIDE.md) for complete ML documentation**
 
 ### Core Scanner Features
 - **Intraday Analysis**: Uses 15-minute candles for responsive signals

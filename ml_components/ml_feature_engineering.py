@@ -64,32 +64,47 @@ class FeatureEngineer:
         Returns:
             DataFrame with interaction features added
         """
+        # Normalize column names to handle both uppercase and lowercase
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        open_col = 'Open' if 'Open' in df.columns else 'open'
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
+        volume_col = 'Volume' if 'Volume' in df.columns else 'volume'
+        
         # RSI extremes
-        df['rsi_oversold'] = (df['rsi'] < 30).astype(int)
-        df['rsi_overbought'] = (df['rsi'] > 70).astype(int)
+        if 'rsi' in df.columns:
+            df['rsi_oversold'] = (df['rsi'] < 30).astype(int)
+            df['rsi_overbought'] = (df['rsi'] > 70).astype(int)
         
         # Bollinger Band signals
-        df['bb_squeeze'] = df['bb_width'] / df['bb_width'].rolling(20).mean()
-        df['price_bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+        if 'bb_width' in df.columns and 'bb_upper' in df.columns and 'bb_lower' in df.columns:
+            df['bb_squeeze'] = df['bb_width'] / df['bb_width'].rolling(20).mean()
+            df['price_bb_position'] = (df[close_col] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
         
         # MACD signals
-        df['macd_bullish'] = ((df['macd'] > df['macd_signal']) & 
-                              (df['macd'].shift(1) <= df['macd_signal'].shift(1))).astype(int)
-        df['macd_bearish'] = ((df['macd'] < df['macd_signal']) & 
-                              (df['macd'].shift(1) >= df['macd_signal'].shift(1))).astype(int)
+        if 'macd' in df.columns and 'macd_signal' in df.columns:
+            df['macd_bullish'] = ((df['macd'] > df['macd_signal']) & 
+                                  (df['macd'].shift(1) <= df['macd_signal'].shift(1))).astype(int)
+            df['macd_bearish'] = ((df['macd'] < df['macd_signal']) & 
+                                  (df['macd'].shift(1) >= df['macd_signal'].shift(1))).astype(int)
         
         # Volume anomalies
-        df['volume_spike'] = (df['volume'] > df['volume'].rolling(20).mean() * 2).astype(int)
+        if volume_col in df.columns:
+            df['volume_spike'] = (df[volume_col] > df[volume_col].rolling(20).mean() * 2).astype(int)
         
-        # Trend combinations
-        df['trend_momentum'] = df['trend_strength'] * df['price_change_5d']
+        # Trend combinations (only if columns exist)
+        if 'trend_strength' in df.columns and 'price_change_5d' in df.columns:
+            df['trend_momentum'] = df['trend_strength'] * df['price_change_5d']
         
-        # Support/Resistance proximity
-        df['near_support'] = (df['support_distance'] < 0.02).astype(int)
-        df['near_resistance'] = (df['resistance_distance'] < 0.02).astype(int)
+        # Support/Resistance proximity (only if columns exist)
+        if 'support_distance' in df.columns:
+            df['near_support'] = (df['support_distance'] < 0.02).astype(int)
+        if 'resistance_distance' in df.columns:
+            df['near_resistance'] = (df['resistance_distance'] < 0.02).astype(int)
         
-        # Volatility-adjusted returns
-        df['sharpe_5d'] = df['price_change_5d'] / (df['volatility_20d'] + 0.0001)
+        # Volatility-adjusted returns (only if columns exist)
+        if 'price_change_5d' in df.columns and 'volatility_20d' in df.columns:
+            df['sharpe_5d'] = df['price_change_5d'] / (df['volatility_20d'] + 0.0001)
         
         return df
     
@@ -151,16 +166,31 @@ class FeatureEngineer:
         Returns:
             DataFrame with all engineered features
         """
+        # Normalize column names to handle both uppercase and lowercase
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        volume_col = 'Volume' if 'Volume' in df.columns else 'volume'
+        
         # Create interaction features
         df = self.create_interaction_features(df)
         
         # Create lag features for key indicators
         lag_features = ['rsi', 'macd', 'volume_ratio', 'volatility_20d']
-        df = self.create_lag_features(df, lag_features)
+        # Filter to only existing columns
+        lag_features = [f for f in lag_features if f in df.columns]
+        if lag_features:
+            df = self.create_lag_features(df, lag_features)
         
         # Create rolling features for price and volume
-        rolling_features = ['close', 'volume', 'volatility_20d']
-        df = self.create_rolling_features(df, rolling_features, windows=[5, 10, 20])
+        rolling_features = []
+        if close_col in df.columns:
+            rolling_features.append(close_col)
+        if volume_col in df.columns:
+            rolling_features.append(volume_col)
+        if 'volatility_20d' in df.columns:
+            rolling_features.append('volatility_20d')
+        
+        if rolling_features:
+            df = self.create_rolling_features(df, rolling_features, windows=[5, 10, 20])
         
         # Technical pattern recognition
         df = self.add_candlestick_patterns(df)
@@ -180,27 +210,37 @@ class FeatureEngineer:
         Returns:
             DataFrame with pattern features
         """
-        # Doji pattern
-        df['doji'] = (np.abs(df['close'] - df['open']) / df['close'] < 0.001).astype(int)
+        # Normalize column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        open_col = 'Open' if 'Open' in df.columns else 'open'
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
         
-        # Hammer pattern
-        df['hammer'] = ((df['lower_shadow'] > df['body_ratio'] * 2) & 
-                       (df['upper_shadow'] < df['body_ratio'] * 0.5)).astype(int)
+        # Only add patterns if we have the required columns
+        if close_col in df.columns and open_col in df.columns:
+            # Doji pattern
+            df['doji'] = (np.abs(df[close_col] - df[open_col]) / df[close_col] < 0.001).astype(int)
+            
+            # Engulfing patterns
+            df['bullish_engulfing'] = ((df[close_col] > df[open_col]) & 
+                                       (df[close_col].shift(1) < df[open_col].shift(1)) &
+                                       (df[open_col] < df[close_col].shift(1)) &
+                                       (df[close_col] > df[open_col].shift(1))).astype(int)
+            
+            df['bearish_engulfing'] = ((df[close_col] < df[open_col]) & 
+                                       (df[close_col].shift(1) > df[open_col].shift(1)) &
+                                       (df[open_col] > df[close_col].shift(1)) &
+                                       (df[close_col] < df[open_col].shift(1))).astype(int)
         
-        # Shooting star
-        df['shooting_star'] = ((df['upper_shadow'] > df['body_ratio'] * 2) & 
-                               (df['lower_shadow'] < df['body_ratio'] * 0.5)).astype(int)
-        
-        # Engulfing patterns
-        df['bullish_engulfing'] = ((df['close'] > df['open']) & 
-                                   (df['close'].shift(1) < df['open'].shift(1)) &
-                                   (df['open'] < df['close'].shift(1)) &
-                                   (df['close'] > df['open'].shift(1))).astype(int)
-        
-        df['bearish_engulfing'] = ((df['close'] < df['open']) & 
-                                   (df['close'].shift(1) > df['open'].shift(1)) &
-                                   (df['open'] > df['close'].shift(1)) &
-                                   (df['close'] < df['open'].shift(1))).astype(int)
+        # Hammer and shooting star patterns (only if shadow columns exist)
+        if 'lower_shadow' in df.columns and 'upper_shadow' in df.columns and 'body_ratio' in df.columns:
+            # Hammer pattern
+            df['hammer'] = ((df['lower_shadow'] > df['body_ratio'] * 2) & 
+                           (df['upper_shadow'] < df['body_ratio'] * 0.5)).astype(int)
+            
+            # Shooting star
+            df['shooting_star'] = ((df['upper_shadow'] > df['body_ratio'] * 2) & 
+                                   (df['lower_shadow'] < df['body_ratio'] * 0.5)).astype(int)
         
         return df
     
@@ -214,20 +254,26 @@ class FeatureEngineer:
         Returns:
             DataFrame with regime features
         """
-        # Trend classification
-        df['uptrend'] = ((df['sma_20'] > df['sma_50']) & 
-                        (df['close'] > df['sma_20'])).astype(int)
-        df['downtrend'] = ((df['sma_20'] < df['sma_50']) & 
-                          (df['close'] < df['sma_20'])).astype(int)
-        df['sideways'] = (~df['uptrend'] & ~df['downtrend']).astype(int)
+        # Normalize column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
         
-        # Volatility regime
-        vol_median = df['volatility_20d'].rolling(252).median()
-        df['high_vol_regime'] = (df['volatility_20d'] > vol_median * 1.5).astype(int)
-        df['low_vol_regime'] = (df['volatility_20d'] < vol_median * 0.5).astype(int)
+        # Trend classification (only if moving averages exist)
+        if 'sma_20' in df.columns and 'sma_50' in df.columns and close_col in df.columns:
+            df['uptrend'] = ((df['sma_20'] > df['sma_50']) & 
+                            (df[close_col] > df['sma_20'])).astype(int)
+            df['downtrend'] = ((df['sma_20'] < df['sma_50']) & 
+                              (df[close_col] < df['sma_20'])).astype(int)
+            df['sideways'] = (~df['uptrend'] & ~df['downtrend']).astype(int)
         
-        # Momentum regime
-        df['strong_momentum'] = (np.abs(df['price_change_20d']) > 0.1).astype(int)
+        # Volatility regime (only if volatility column exists)
+        if 'volatility_20d' in df.columns:
+            vol_median = df['volatility_20d'].rolling(252).median()
+            df['high_vol_regime'] = (df['volatility_20d'] > vol_median * 1.5).astype(int)
+            df['low_vol_regime'] = (df['volatility_20d'] < vol_median * 0.5).astype(int)
+        
+        # Momentum regime (only if column exists)
+        if 'price_change_20d' in df.columns:
+            df['strong_momentum'] = (np.abs(df['price_change_20d']) > 0.1).astype(int)
         
         return df
     

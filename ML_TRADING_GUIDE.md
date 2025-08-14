@@ -16,11 +16,12 @@
 python3.11 -m venv venv311
 source venv311/bin/activate
 
-# Install Apple Silicon optimized TensorFlow
-pip install tensorflow-macos tensorflow-metal
+# Install Apple Silicon optimized TensorFlow (verified working versions)
+pip install tensorflow-macos==2.16.2 tensorflow-metal==1.1.0
 
 # Install other ML dependencies
-pip install scikit-learn xgboost shap mlflow optuna imbalanced-learn pandas python-dotenv
+pip install scikit-learn==1.3.2 xgboost==2.0.3 shap==0.44.0 mlflow==2.9.2 optuna==3.5.0 imbalanced-learn==0.11.0
+pip install pandas numpy python-dotenv alpaca-py
 
 # Create necessary directories
 mkdir -p models ml_data_cache ml_logs
@@ -28,6 +29,7 @@ mkdir -p models ml_data_cache ml_logs
 # Test your setup
 python test_ml_setup.py
 # You should see: "✅ Metal Performance Shaders (MPS) available"
+# This confirms GPU acceleration is working on your Apple Silicon Mac
 ```
 
 #### For Intel Macs and Other Platforms
@@ -70,13 +72,16 @@ The deep learning system enhances your trading scanner with:
 ## 🧠 ML Components
 
 ### 1. Data Collection (`ml_data_collector.py`)
-Collects and prepares historical data for training using **Alpaca API** (not yfinance):
+Collects and prepares historical data for training using **Alpaca API**:
 
-**Important**: The data collector now uses Alpaca API for reliability and consistency:
-- No more yfinance timeouts or parsing errors
-- Same data source as the main scanner
-- Fetches data in chunks to handle 8+ years of history
-- Automatic rate limit handling
+**Important Updates (as of latest commit)**: 
+- **Switched from yfinance to Alpaca API** for reliability and consistency
+- **Fixed**: No more yfinance timeouts or parsing errors
+- **Fixed**: Column name inconsistencies (handles both 'close'/'Close' formats)
+- Uses same data source as main scanner for consistency
+- Fetches data in chunks (365 days at a time) to handle 8+ years of history
+- Automatic rate limiting and timezone handling
+- Converts Alpaca's lowercase column names to uppercase for compatibility
 
 ```python
 from ml_components.ml_data_collector import MLDataCollector
@@ -99,6 +104,11 @@ Creates 50+ technical indicators and patterns:
 - Volume: Volume ratios, spikes
 - Patterns: Candlestick patterns, support/resistance
 - Market regime: Trend strength, volatility regime
+
+**Recent Fix**: Column name normalization now handles both uppercase and lowercase formats:
+- Automatically detects whether data has 'Close' or 'close' columns
+- All feature creation is conditional on column existence
+- Prevents KeyError issues when switching between data sources
 
 ### 3. Neural Network Model (`ml_model.py`)
 Hybrid architecture with:
@@ -295,6 +305,22 @@ The system automatically monitors:
 
 ## 🛠️ Troubleshooting
 
+### TensorFlow Installation Issues (Apple Silicon)
+```bash
+# If you see "No matching distribution found for tensorflow==2.15.0"
+# This means you're on Apple Silicon - use tensorflow-macos instead:
+pip uninstall tensorflow  # Remove any conflicting installation
+pip install tensorflow-macos==2.16.2 tensorflow-metal==1.1.0
+```
+
+### Column Name Errors (KeyError: 'close')
+```bash
+# Fixed in latest version - the system now handles both formats:
+# - Alpaca API returns: 'close', 'open', 'high', 'low', 'volume'
+# - ML components expect: 'Close', 'Open', 'High', 'Low', 'Volume'
+# The data collector automatically converts to uppercase
+```
+
 ### Model Not Loading
 ```bash
 # Check model files exist
@@ -311,6 +337,15 @@ ls -la models/
 - Normal during regime changes
 - Retrain if persists > 2 weeks
 - Check for data issues
+
+### Git Performance Issues
+```bash
+# If git is slow due to venv files:
+# Ensure venv directories are in .gitignore:
+echo "venv/" >> .gitignore
+echo "venv311/" >> .gitignore
+git rm -r --cached venv311  # Remove from tracking if needed
+```
 
 ## 🔄 Continuous Improvement
 
@@ -330,6 +365,12 @@ ls -la models/
 3. Optimize model architecture
 
 ## 📝 Configuration
+
+### Environment Requirements
+- **Python**: 3.11 (required for TensorFlow compatibility)
+- **macOS (Apple Silicon)**: 12.0+ for Metal Performance Shaders
+- **RAM**: 8GB minimum, 16GB recommended
+- **Storage**: 50GB+ for data and models
 
 ### Model Parameters (Adjustable)
 ```python
@@ -407,10 +448,14 @@ model_b_trades = []
 
 ## 📞 Support
 
-### Common Issues
+### Common Issues & Solutions
 - **ModuleNotFoundError**: Run `pip install -r requirements.txt`
 - **No model file**: Train model first with `ml_trainer.py`
 - **Low accuracy**: Normal in sideways markets
+- **TensorFlow not found (Apple Silicon)**: Install tensorflow-macos instead
+- **KeyError 'close'**: Update to latest version (fixed in recent commit)
+- **Alpaca API timeout**: Check API keys and rate limits
+- **yfinance errors**: System now uses Alpaca API instead (fixed)
 
 ### Getting Help
 1. Check logs in `ml_logs/` directory

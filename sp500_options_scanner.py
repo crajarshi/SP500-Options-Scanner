@@ -27,6 +27,14 @@ from options_chain import OptionsChainAnalyzer
 from risk_manager import RiskManager
 from max_profit_scanner import MaxProfitScanner
 
+# Optional ML import - only if available
+try:
+    from ml_scanner_integration import MLScannerIntegration
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    MLScannerIntegration = None
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +51,7 @@ class SP500OptionsScanner:
     """Main scanner class"""
     
     def __init__(self, demo_mode=False, use_alpaca=True, quick_mode=False, scanner_mode='adaptive', 
-                 watchlist_file=None, skip_regime=False, fetch_options=False):
+                 watchlist_file=None, skip_regime=False, fetch_options=False, ml_enabled=False):
         # Initialize risk manager
         self.risk_manager = RiskManager(
             portfolio_value=config.PORTFOLIO_VALUE,
@@ -67,6 +75,36 @@ class SP500OptionsScanner:
         self.skip_regime = skip_regime
         self.invalid_tickers = []  # Track invalid tickers from watchlist
         self.fetch_options = fetch_options
+        self.ml_enabled = ml_enabled
+        
+        # Initialize ML integration if enabled
+        self.ml_integration = None
+        if self.ml_enabled:
+            if not ML_AVAILABLE:
+                logger.warning("⚠️ ML components not available. Please install TensorFlow: pip install tensorflow")
+                self.ml_enabled = False
+            else:
+                try:
+                    # Check if model files exist
+                    model_path = 'models/best_model.h5'
+                    feature_engineer_path = 'models/feature_engineer.pkl'
+                    
+                    if os.path.exists(model_path) and os.path.exists(feature_engineer_path):
+                        self.ml_integration = MLScannerIntegration(
+                            model_path=model_path,
+                            feature_engineer_path=feature_engineer_path,
+                            enable_explainability=True,
+                            enable_monitoring=True,
+                            min_confidence=0.6
+                        )
+                        logger.info("✅ ML integration enabled successfully")
+                    else:
+                        logger.warning(f"⚠️ ML models not found. Please run 'python ml_components/ml_trainer.py' first")
+                        self.ml_enabled = False
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize ML integration: {e}")
+                    self.ml_enabled = False
+                    self.ml_integration = None
         
         # Initialize data provider
         if self.use_alpaca and not self.demo_mode:
@@ -109,7 +147,7 @@ class SP500OptionsScanner:
             Dictionary containing all scan context information
         """
         # Get market clock information
-        clock = self.data_provider.get_market_clock()
+        clock = self.data_provider.get_market_clock() if self.data_provider else None
         
         if clock and clock['is_open']:
             # Market is open - use current time
@@ -118,7 +156,7 @@ class SP500OptionsScanner:
             data_timestamp = datetime.now()
         else:
             # Market is closed - use next trading day
-            reference_date = self.data_provider.get_next_trading_day()
+            reference_date = self.data_provider.get_next_trading_day() if self.data_provider else datetime.now()
             is_realtime = False
             # Data timestamp is last market close
             data_timestamp = clock['next_close'] if clock and clock['next_close'] else datetime.now()
@@ -431,6 +469,20 @@ class SP500OptionsScanner:
                 mode=self.effective_mode if self.effective_mode else 'adaptive',
                 market_regime=self.market_regime
             )
+            
+            # Enhance with ML predictions if enabled
+            if self.ml_enabled and self.ml_integration and analysis:
+                analysis = self.ml_integration.enhance_stock_analysis(
+                    stock_data=df,
+                    ticker=ticker,
+                    existing_signal=analysis
+                )
+                
+                # Log ML enhancement
+                if 'ml_probability' in analysis:
+                    logger.debug(f"{ticker}: ML probability={analysis['ml_probability']:.2%}, "
+                               f"confidence={analysis['ml_confidence']:.2%}")
+            
             return analysis
             
         except Exception as e:
@@ -884,8 +936,23 @@ class SP500OptionsScanner:
                         analyses.append(analysis)
                     pbar.update(1)
         
-        # Rank stocks
-        ranked_analyses = rank_stocks(analyses)
+        # Apply ML filtering and ranking if enabled
+        if self.ml_enabled and self.ml_integration and analyses:
+            # Filter by ML confidence
+            ml_filtered = self.ml_integration.filter_by_ml_confidence(analyses)
+            logger.info(f"ML filtering: {len(analyses)} -> {len(ml_filtered)} signals")
+            
+            # Rank with ML
+            ranked_analyses = self.ml_integration.rank_with_ml(ml_filtered)
+            
+            # Check for drift if monitoring is enabled
+            if len(ranked_analyses) > 0:
+                drift_status = self.ml_integration.get_monitoring_status()
+                if drift_status.get('status') != 'disabled':
+                    logger.info(f"ML monitoring status: {drift_status}")
+        else:
+            # Standard ranking without ML
+            ranked_analyses = rank_stocks(analyses)
         
         # Save results
         self.save_results(ranked_analyses, scan_time, scan_type)
@@ -1088,6 +1155,11 @@ Examples:
                        action='store_true',
                        help='Include specific options contract recommendations')
     
+    # ML integration
+    parser.add_argument('--ml-enabled',
+                       action='store_true',
+                       help='Enable ML predictions for enhanced signal analysis')
+    
     # Maximum Profit Scanner
     parser.add_argument('--max-profit',
                        action='store_true',
@@ -1196,7 +1268,8 @@ def main():
         scanner_mode=scanner_mode,
         watchlist_file=args.watchlist,
         skip_regime=args.no_regime,
-        fetch_options=args.options
+        fetch_options=args.options,
+        ml_enabled=args.ml_enabled
     )
     
     # Handle special modes

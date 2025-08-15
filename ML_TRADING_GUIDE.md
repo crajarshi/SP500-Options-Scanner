@@ -50,6 +50,9 @@ python test_ml_setup.py
 
 ### First-Time Setup
 ```bash
+# 0. Install required ML dependencies (if not already installed)
+pip install tensorflow scikit-learn shap
+
 # 1. Collect historical data and train initial model
 python ml_components/ml_trainer.py
 
@@ -59,6 +62,8 @@ python ml_components/ml_backtester.py
 # 3. Start scanner with ML integration
 python sp500_options_scanner.py --ml-enabled
 ```
+
+**Note:** The `--ml-enabled` flag will work without ML models, but will show a warning. To fully utilize ML features, you must first train the models using the steps above.
 
 ## 📊 System Overview
 
@@ -202,8 +207,34 @@ if drift_result['overall_drift']:
 ## 🔧 Integration with Scanner
 
 ### Enable ML in Scanner
+The scanner now has built-in ML integration. Simply use the `--ml-enabled` flag:
+
+```bash
+# Basic ML-enhanced scanning
+python sp500_options_scanner.py --ml-enabled
+
+# ML + Options recommendations
+python sp500_options_scanner.py --ml-enabled --options
+
+# ML + Top 10 results only
+python sp500_options_scanner.py --ml-enabled --top 10
+
+# ML + Export to CSV
+python sp500_options_scanner.py --ml-enabled --export
+```
+
+### What ML Integration Provides
+When ML is enabled, the scanner:
+1. **Enhances each stock signal** with ML probability and confidence scores
+2. **Filters results** based on ML confidence thresholds (default: 60%)
+3. **Re-ranks stocks** using a combination of traditional and ML scores
+4. **Provides explanations** for predictions using SHAP values
+5. **Monitors for drift** to detect when market conditions change
+6. **Adjusts position sizing** based on ML confidence levels
+
+### Under the Hood
 ```python
-# In sp500_options_scanner.py
+# The scanner automatically does this when --ml-enabled is used:
 from ml_scanner_integration import MLScannerIntegration
 
 # Initialize ML integration
